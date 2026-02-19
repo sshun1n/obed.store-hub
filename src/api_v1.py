@@ -5,14 +5,12 @@ from sqlalchemy.orm import Session
 from typing import List
 from datetime import timedelta
 
-import crud
-import schemas
-import auth
-from database import get_db
+from src import crud, schemas, auth
+from src.database import get_db
 
 # Импорт для работы с Google Sheets напрямую через API
 import gspread
-from service import AppConfig, GoogleSheetClient
+from src.service import AppConfig, GoogleSheetClient
 
 router = APIRouter()
 

@@ -1,7 +1,6 @@
 from sqlalchemy.orm import Session
 from typing import List, Optional
-import database
-import schemas
+from src import database, schemas
 import bcrypt
 
 # --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ БЕЗОПАСНОСТИ ---
@@ -21,7 +20,7 @@ def get_category(db: Session, category_id: int) -> Optional[database.Category]:
     return db.query(database.Category).filter(database.Category.id == category_id).first()
 
 def get_categories(db: Session, skip: int = 0, limit: int = 100) -> List[database.Category]:
-    # Получаем корневые категории (дети подтянутся сами)
+    # Получаем корневые категории
     return db.query(database.Category).filter(database.Category.parent_id == None).offset(skip).limit(limit).all()
 
 def create_category(db: Session, category: schemas.CategoryCreate) -> database.Category:
@@ -55,10 +54,8 @@ def get_products(db: Session, skip: int = 0, limit: int = 500) -> List[database.
     return db.query(database.Product).offset(skip).limit(limit).all()
 
 def sync_products(db: Session, names: List[str]) -> int:
-    # Добавляет новые названия блюд из Sheets в нашу базу данных
     added_count = 0
     existing_names = {p.name_from_sheet for p in db.query(database.Product.name_from_sheet).all()}
-    
     for name in names:
         if name not in existing_names:
             db_product = database.Product(name_from_sheet=name)
@@ -105,24 +102,19 @@ def create_user(db: Session, user: schemas.UserCreate) -> database.User:
 
 def update_user(db: Session, user_id: int, user_data: schemas.UserUpdate) -> Optional[database.User]:
     db_user = get_user(db, user_id)
-    if not db_user:
-        return None
-    
+    if not db_user: return None
     update_dict = user_data.dict(exclude_unset=True)
     if "password" in update_dict:
         update_dict["hashed_password"] = get_password_hash(update_dict.pop("password"))
-    
     for key, value in update_dict.items():
         setattr(db_user, key, value)
-    
     db.commit()
     db.refresh(db_user)
     return db_user
 
 def delete_user(db: Session, user_id: int) -> bool:
     db_user = get_user(db, user_id)
-    if not db_user:
-        return False
+    if not db_user: return False
     db.delete(db_user)
     db.commit()
     return True
@@ -153,8 +145,7 @@ def activate_google_config(db: Session, config_id: int) -> Optional[database.Goo
 
 def delete_google_config(db: Session, config_id: int) -> bool:
     db_config = db.query(database.GoogleConfig).filter(database.GoogleConfig.id == config_id).first()
-    if not db_config:
-        return False
+    if not db_config: return False
     db.delete(db_config)
     db.commit()
     return True

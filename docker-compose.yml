@@ -1,0 +1,57 @@
+version: '3.3'
+
+services:
+  # База данных PostgreSQL
+  obed-db:
+    image: postgres:16-alpine
+    container_name: obed-store-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD} # Берется из .env на сервере
+      POSTGRES_DB: obed_store_db
+    volumes:
+      - obed_db_data:/var/lib/postgresql/data
+    networks:
+      - proxy
+
+  # Основное приложение
+  obed-app:
+    build: .
+    container_name: obed-store-app
+    restart: unless-stopped
+    depends_on:
+      - obed-db
+    env_file:
+      - .env # Автоматически передает ВСЕ переменные из .env в приложение
+    volumes:
+      - ./reports:/app/reports
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - proxy
+
+    labels:
+      - "traefik.enable=true"
+      # HTTP -> HTTPS Redirect
+      - "traefik.http.routers.obed-store.entrypoints=http"
+      - "traefik.http.routers.obed-store.rule=Host(`obed.sshunin.ru`)"
+      - "traefik.http.middlewares.obed-store-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.obed-store.middlewares=obed-store-https-redirect"
+      # HTTPS
+      - "traefik.http.routers.obed-store-secure.entrypoints=https"
+      - "traefik.http.routers.obed-store-secure.rule=Host(`obed.sshunin.ru`)"
+      - "traefik.http.routers.obed-store-secure.tls=true"
+      - "traefik.http.routers.obed-store-secure.service=obed-store"
+      # Настройка порта
+      - "traefik.http.services.obed-store.loadbalancer.server.port=8282"
+      - "traefik.docker.network=proxy"
+    
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  proxy:
+    external: true
+
+volumes:
+  obed_db_data:

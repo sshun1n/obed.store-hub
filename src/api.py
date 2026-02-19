@@ -9,15 +9,15 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session
 
-# Импорт сервисов и исключений
-from service import (
+# Импорт внутренних модулей с учетом новой структуры src
+from src.service import (
     AppConfig, GoogleSheetClient, NomenclatureService,
     ConfigurationError, SheetAPIError, ServiceError
 )
-from report_generator import ReportGenerator
-import api_v1
-from database import get_db, Product, Category
-import crud
+from src.report_generator import ReportGenerator
+import src.api_v1 as api_v1
+from src.database import get_db, Product, Category
+import src.crud as crud
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -39,6 +39,9 @@ app.include_router(api_v1.router, prefix="/api/v1")
 # Глобальный словарь для сервисов
 services: Dict[str, Any] = {}
 
+# Определение базовой директории проекта (на один уровень выше src)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 @app.on_event("startup")
 async def startup_event() -> None:
     """Инициализация сервисов при запуске сервера."""
@@ -47,7 +50,9 @@ async def startup_event() -> None:
         config.validate()
         google_client = GoogleSheetClient(config)
         services['nomenclature'] = NomenclatureService(google_client)
-        services['report_gen'] = ReportGenerator(output_dir="reports")
+        # Путь к отчетам в корне проекта
+        reports_dir = os.path.join(BASE_DIR, "reports")
+        services['report_gen'] = ReportGenerator(output_dir=reports_dir)
         logger.info("Сервисы успешно инициализированы")
     except Exception as e:
         logger.critical(f"Ошибка при инициализации сервисов: {e}", exc_info=True)
@@ -96,26 +101,18 @@ async def get_nomenclature_json(db: Session = Depends(get_db)) -> Dict[str, List
     config = get_active_config_or_raise(db)
     
     try:
-        # Получаем данные из Google Sheets
         data = services['nomenclature'].get_aggregated_nomenclature(
             config.spreadsheet_id, config.sheet_name
         )
-        
-        # Получаем привязки категорий из БД
         db_products = db.query(Product).all()
         product_categories_map = {
             p.name_from_sheet: [c.name for c in p.categories] 
             for p in db_products
         }
-
-        # Объединяем данные
         enriched_data = []
         for item in data:
             item_categories = product_categories_map.get(item['full_name'], [])
-            enriched_data.append({
-                **item,
-                "categories": item_categories
-            })
+            enriched_data.append({**item, "categories": item_categories})
         return {"data": enriched_data}
     except Exception as e:
         logger.error(f"Ошибка в get_nomenclature_json: {e}", exc_info=True)
@@ -126,9 +123,7 @@ async def get_orders_json(date: str, db: Session = Depends(get_db)) -> Dict[str,
     """Возвращает заказы по точкам на указанную дату."""
     if 'nomenclature' not in services:
         raise HTTPException(status_code=503, detail="Сервис заказов недоступен")
-    
     config = get_active_config_or_raise(db)
-    
     try:
         orders = services['nomenclature'].get_orders_by_date(
             config.spreadsheet_id, config.sheet_name, date
@@ -157,7 +152,6 @@ async def generate_pdf_report(
         if not data:
              raise HTTPException(status_code=404, detail="Нет данных для генерации отчета")
 
-        # Логика группировки и фильтрации
         db_products = db.query(Product).all()
         excluded_set = set(request.excluded_category_ids)
         prod_map = {p.name_from_sheet: p.categories for p in db_products}
@@ -166,7 +160,7 @@ async def generate_pdf_report(
         for item in data:
             product_categories = prod_map.get(item['full_name'], [])
             if not product_categories:
-                if 0 not in excluded_set: # Условно 0 - это "Без категории"
+                if 0 not in excluded_set:
                     if "БЕЗ КАТЕГОРИИ" not in grouped_data: grouped_data["БЕЗ КАТЕГОРИИ"] = []
                     grouped_data["БЕЗ КАТЕГОРИИ"].append(item)
                 continue
@@ -179,7 +173,6 @@ async def generate_pdf_report(
         if not grouped_data:
             raise HTTPException(status_code=400, detail="Все выбранные товары исключены фильтром")
 
-        # Умная сортировка
         for cat_name in grouped_data:
             grouped_data[cat_name].sort(key=lambda x: (
                 x['main_name'].split()[0].lower() if x['main_name'].split() else "", 
@@ -205,14 +198,11 @@ async def generate_pdf_report(
         logger.error(f"Ошибка при создании PDF: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Ошибка генерации отчета")
 
-# Подключение статических файлов
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# Подключение статических файлов (путь относительно корня проекта)
+static_dir = os.path.join(BASE_DIR, "static")
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 @app.get("/", include_in_schema=False)
 async def read_root() -> RedirectResponse:
     """Перенаправление на главную страницу."""
     return RedirectResponse(url="/static/index.html")
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -6,9 +6,7 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
-import database
-import schemas
-import crud
+from src import database, schemas, crud
 
 # Секретный ключ для подписи токенов
 SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-key-change-me-in-production")
