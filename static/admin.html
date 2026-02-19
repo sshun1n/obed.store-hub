@@ -37,6 +37,11 @@
             <!-- 2. Секция Google Таблиц -->
             <div class="card">
                 <h2 class="card-title-small">Google Таблицы</h2>
+
+                <div class="alert" style="background: #e8f4f8; padding: 15px; border-radius: 8px; font-size: 0.9rem; margin-bottom: 20px;">
+                    <strong>Важно:</strong> Предоставьте доступ (Editor) для: <br>
+                    <code id="serviceEmail" style="display: block; margin-top: 8px; padding: 8px; background: white; border: 1px solid #ccc; cursor: pointer; text-align: center;" title="Нажмите, чтобы скопировать">obed-store-service@obedstore-service.iam.gserviceaccount.com</code>
+                </div>
                 
                 <!-- Шаг 1: Ввод URL -->
                 <div id="step1" class="form-layout">
@@ -47,14 +52,9 @@
                     <button id="inspectBtn" class="btn btn-primary">Проверить доступ</button>
                 </div>
 
-                <!-- Шаг 2: Инструкция и выбор листа (скрыто) -->
+                <!-- Шаг 2: Выбор листа (скрыто) -->
                 <div id="step2" class="form-layout" style="display: none; margin-top: 20px; padding-top: 20px; border-top: 1px dashed #ddd;">
-                    <div class="alert" style="background: #e8f4f8; padding: 15px; border-radius: 8px; font-size: 0.9rem;">
-                        <strong>Важно:</strong> Предоставьте доступ (Editor) для: <br>
-                        <code id="serviceEmail" style="display: block; margin-top: 8px; padding: 8px; background: white; border: 1px solid #ccc; cursor: pointer; text-align: center;" title="Нажмите, чтобы скопировать">obed-store-service@obedstore-service.iam.gserviceaccount.com</code>
-                    </div>
-                    
-                    <div class="form-group" style="margin-top: 15px;">
+                    <div class="form-group">
                         <label class="control-label">Выберите лист для работы</label>
                         <select id="worksheetSelect" class="styled-text-input" style="width: 100%;"></select>
                     </div>

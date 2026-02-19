@@ -2,9 +2,11 @@
 FROM python:3.10-slim
 
 # Установка системных зависимостей для psycopg2 и шрифтов
-RUN apt-get update && apt-get install -y 
-    libpq-dev 
-    gcc 
+RUN apt-get update && apt-get install -y \
+    libpq-dev \
+    gcc \
+    fonts-liberation \
+    fontconfig \
     && rm -rf /var/lib/apt/lists/*
 
 # Установка рабочей директории
@@ -20,6 +22,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src/ ./src/
 COPY static/ ./static/
 COPY main.py .
+COPY init_db.py .
 
 # Создаем папку для отчетов
 RUN mkdir -p reports

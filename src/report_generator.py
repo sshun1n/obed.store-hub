@@ -32,17 +32,43 @@ class ReportGenerator:
             os.makedirs(self.output_dir)
 
     def _register_fonts(self) -> None:
-        """Регистрация шрифта Arial для поддержки кириллицы."""
-        font_paths = ["C:\\Windows\\Fonts", "/usr/share/fonts/truetype/msttcorefonts"]
-        arial = next((os.path.join(p, "arial.ttf") for p in font_paths if os.path.exists(os.path.join(p, "arial.ttf"))), None)
-        arial_bd = next((os.path.join(p, "arialbd.ttf") for p in font_paths if os.path.exists(os.path.join(p, "arialbd.ttf"))), None)
+        """Регистрация шрифтов для поддержки кириллицы (Arial или Liberation)."""
+        font_paths = [
+            "C:\\Windows\\Fonts", 
+            "/usr/share/fonts/truetype/msttcorefonts",
+            "/usr/share/fonts/truetype/liberation" # Для Linux/Docker
+        ]
+        
+        # Список возможных имен файлов для обычного и жирного шрифта
+        normal_names = ["arial.ttf", "LiberationSans-Regular.ttf"]
+        bold_names = ["arialbd.ttf", "LiberationSans-Bold.ttf"]
+
+        arial = None
+        for path in font_paths:
+            for name in normal_names:
+                full_path = os.path.join(path, name)
+                if os.path.exists(full_path):
+                    arial = full_path
+                    break
+            if arial: break
+
+        arial_bd = None
+        for path in font_paths:
+            for name in bold_names:
+                full_path = os.path.join(path, name)
+                if os.path.exists(full_path):
+                    arial_bd = full_path
+                    break
+            if arial_bd: break
 
         if arial and arial_bd:
             try:
                 pdfmetrics.registerFont(TTFont('Arial', arial))
                 pdfmetrics.registerFont(TTFont('Arial-Bold', arial_bd))
                 self.font_name, self.font_name_bold = 'Arial', 'Arial-Bold'
-            except: pass
+                logger.info(f"Шрифты зарегистрированы: {os.path.basename(arial)}")
+            except Exception as e:
+                logger.error(f"Ошибка регистрации шрифтов: {e}")
 
     def _create_formatted_name_cell(self, main_part: str, composition: str) -> Paragraph:
         """Создает ячейку с названием и мелким составом."""
