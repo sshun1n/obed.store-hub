@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OBED.STORE | Hub</title>
+    <link rel="icon" type="image/svg+xml" href="img/favicon.svg">
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    
+    <!-- Шапка вставится сюда автоматически через JS -->
+
+    <div class="container">
+        <header class="page-header">
+            <h1>Сервисы</h1>
+            <p class="subtitle">Управляйте процессами доставки и производства из одного места.</p>
+        </header>
+
+        <div class="grid">
+            <!-- Активная карточка (Номенклатура) -->
+            <a href="nomenclature.html" class="card active-card">
+                <div class="card-icon" style="color: var(--brand-green); background: #E8F5E9;">
+                    🥗
+                </div>
+                <div>
+                    <div class="card-title">Номенклатура</div>
+                    <div class="card-desc">
+                        Автоматическая агрегация заказов из Google Таблиц, подсчет порций и формирование PDF для кухни.
+                    </div>
+                </div>
+                <div class="status-badge status-active">Активен</div>
+            </a>
+
+            <a href="orders.html" class="card active-card">
+            <div class="card-icon" style="color: var(--brand-yellow); background: #FFF8E1;">
+                📦
+            </div>
+            <div>
+                <div class="card-title">Заказы по точкам</div>
+                <div class="card-desc">
+                    Просмотр состава заказа для каждого адреса доставки на выбранную дату.
+                </div>
+            </div>
+            <div class="status-badge status-active">Активен</div>
+            </a>
+
+            <!-- Карточка Управление -->
+            <a href="management.html" class="card active-card">
+                <div class="card-icon" style="color: var(--brand-purple); background: #F3E5F5;">
+                    ⚙️
+                </div>
+                <div>
+                    <div class="card-title">Управление</div>
+                    <div class="card-desc">
+                        Настройка категорий, фильтров для цехов и управление пользователями системы.
+                    </div>
+                </div>
+                <div class="status-badge status-active">Активен</div>
+            </a>
+
+            <!-- Карточка Склад -->
+            <div class="card" style="opacity: 0.7; cursor: default;">
+                <div class="card-icon" style="color: var(--brand-yellow); background: #FFF8E1;">
+                    📦
+                </div>
+                <div>
+                    <div class="card-title">Что-то новенькое</div>
+                    <div class="card-desc">
+                        Может учет остатков продуктов, автоматические заявки на закупку или инвентаризация. Или другие умные слова.
+                    </div>
+                </div>
+                <div class="status-badge status-soon">Скоро</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Футер вставится сюда автоматически -->
+
+    <!-- Подключаем наш скрипт компонентов -->
+    <script src="components.js"></script>
+</body>
+</html>

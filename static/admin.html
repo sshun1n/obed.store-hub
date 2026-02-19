@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Панель управления | OBED.STORE</title>
+    <link rel="icon" type="image/svg+xml" href="img/favicon.svg">
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header class="page-header">
+            <h1>Панель управления</h1>
+            <p class="subtitle">Настройка пользователей и источников данных</p>
+        </header>
+
+        <div class="management-grid">
+            <!-- 1. Секция пользователей -->
+            <div class="card">
+                <h2 class="card-title-small">Пользователи</h2>
+                <div id="userList" style="margin-bottom: 24px;"></div>
+                
+                <h3 style="font-size: 1rem; margin-bottom: 12px; font-weight: 700;">Новый пользователь</h3>
+                <form id="addUserForm" class="form-layout">
+                    <input type="text" id="newUserLogin" class="styled-text-input" placeholder="Логин" required>
+                    <input type="password" id="newUserPassword" class="styled-text-input" placeholder="Пароль" required>
+                    <input type="text" id="newUserFullName" class="styled-text-input" placeholder="ФИО">
+                    <select id="newUserRole" class="styled-text-input">
+                        <option value="manager">Менеджер</option>
+                        <option value="admin">Администратор</option>
+                    </select>
+                    <button type="submit" class="btn btn-primary">Добавить</button>
+                </form>
+            </div>
+
+            <!-- 2. Секция Google Таблиц -->
+            <div class="card">
+                <h2 class="card-title-small">Google Таблицы</h2>
+                
+                <!-- Шаг 1: Ввод URL -->
+                <div id="step1" class="form-layout">
+                    <div class="form-group">
+                        <label class="control-label">URL новой таблицы</label>
+                        <input type="text" id="sheetUrl" class="styled-text-input" style="width: 100%;" placeholder="https://docs.google.com/spreadsheets/d/...">
+                    </div>
+                    <button id="inspectBtn" class="btn btn-primary">Проверить доступ</button>
+                </div>
+
+                <!-- Шаг 2: Инструкция и выбор листа (скрыто) -->
+                <div id="step2" class="form-layout" style="display: none; margin-top: 20px; padding-top: 20px; border-top: 1px dashed #ddd;">
+                    <div class="alert" style="background: #e8f4f8; padding: 15px; border-radius: 8px; font-size: 0.9rem;">
+                        <strong>Важно:</strong> Предоставьте доступ (Editor) для: <br>
+                        <code id="serviceEmail" style="display: block; margin-top: 8px; padding: 8px; background: white; border: 1px solid #ccc; cursor: pointer; text-align: center;" title="Нажмите, чтобы скопировать">obed-store-service@obedstore-service.iam.gserviceaccount.com</code>
+                    </div>
+                    
+                    <div class="form-group" style="margin-top: 15px;">
+                        <label class="control-label">Выберите лист для работы</label>
+                        <select id="worksheetSelect" class="styled-text-input" style="width: 100%;"></select>
+                    </div>
+                    <button id="saveConfigBtn" class="btn btn-primary">Подключить и активировать</button>
+                </div>
+
+                <!-- Список подключенных -->
+                <div style="margin-top: 30px;">
+                    <h3 style="font-size: 1rem; margin-bottom: 12px; font-weight: 700;">Список подключенных</h3>
+                    <div id="googleConfigList"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="components.js"></script>
+    <script src="admin.js"></script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+# Виртуальное окружение
+obed.store/
+venv/
+ENV/
+
+# Секреты и конфигурация
+.env
+auth/credentials.json
+
+# Кэш Python
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+# Отчеты и временные файлы
+reports/*.pdf
+*.log
+
+# IDE
+.vscode/
+.idea/

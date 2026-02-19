@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Заказы по точкам | OBED.STORE</title>
+    <link rel="icon" type="image/svg+xml" href="img/favicon.svg">
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet">
+
+</head>
+<body>
+
+    <div class="container">
+        <header class="page-header">
+            <h1>Заказы по точкам</h1>
+            <p class="subtitle">Детализация отгрузки по адресам</p>
+        </header>
+
+        <section class="controls-panel">
+            <div class="date-control-wrapper">
+                <label for="orderDate" class="control-label">Дата отгрузки:</label>
+                <div class="date-input-container">
+                    <input type="date" id="orderDate" class="styled-date-input">
+                    <span class="calendar-icon">📅</span>
+                </div>
+                <div class="quick-dates">
+                    <button id="todayBtn" class="chip">Сегодня</button>
+                    <button id="tomorrowBtn" class="chip">Завтра</button>
+                </div>
+            </div>
+            
+            <div class="input-group">
+                <div id="statusMsg" class="status-text"></div>
+                <button id="refreshBtn" class="btn btn-primary">Обновить</button>
+            </div>
+        </section>
+
+        <div id="loading" style="text-align: center; padding: 40px; display: none;">Загрузка...</div>
+        <div id="ordersContainer" class="orders-grid">
+            </div>
+
+    </div>
+
+    <script src="components.js"></script>
+    <script src="app.js"></script>
+
+</body>
+</html>
