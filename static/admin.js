@@ -148,7 +148,10 @@ document.addEventListener('DOMContentLoaded', () => {
         googleConfigList.innerHTML = configs.map(c => `
             <div class="category-item" style="border-bottom: 1px solid #f3f4f6; padding: 10px 0;">
                 <div style="flex: 1;">
-                    <div style="font-weight: 600;">${c.title} ${c.is_active ? '<span class="status-badge status-active" style="display:inline; padding:0; margin-left:10px;">Активна</span>' : ''}</div>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <div style="font-weight: 600;">${c.title}</div>
+                        ${c.is_active ? '<span class="status-badge status-active" style="padding:0; margin:0;">Активна</span>' : ''}
+                    </div>
                     <div style="font-size: 0.75rem; color: var(--text-muted);">Лист: ${c.sheet_name}</div>
                 </div>
                 <div class="category-actions" style="opacity: 1;">

@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OBED.STORE | Hub</title>
-    <link rel="icon" type="image/svg+xml" href="img/favicon.svg">
-    <link rel="stylesheet" href="style.css">
+    <link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg">
+    <link rel="stylesheet" href="/static/style.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
@@ -20,7 +20,7 @@
 
         <div class="grid">
             <!-- Активная карточка (Номенклатура) -->
-            <a href="nomenclature.html" class="card active-card">
+            <a href="/nomenclature" class="card active-card">
                 <div class="card-icon" style="color: var(--brand-green); background: #E8F5E9;">
                     🥗
                 </div>
@@ -33,7 +33,7 @@
                 <div class="status-badge status-active">Активен</div>
             </a>
 
-            <a href="orders.html" class="card active-card">
+            <a href="/orders" class="card active-card">
             <div class="card-icon" style="color: var(--brand-yellow); background: #FFF8E1;">
                 📦
             </div>
@@ -47,7 +47,7 @@
             </a>
 
             <!-- Карточка Управление -->
-            <a href="management.html" class="card active-card">
+            <a href="/management" class="card active-card">
                 <div class="card-icon" style="color: var(--brand-purple); background: #F3E5F5;">
                     ⚙️
                 </div>
@@ -79,6 +79,6 @@
     <!-- Футер вставится сюда автоматически -->
 
     <!-- Подключаем наш скрипт компонентов -->
-    <script src="components.js"></script>
+    <script src="/static/components.js"></script>
 </body>
 </html>

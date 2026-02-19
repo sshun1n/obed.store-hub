@@ -26,9 +26,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const data = await response.json();
-            // Если роль админ, можем сразу направить в управление, 
-            // но пока пойдем на главную.
-            window.location.href = 'index.html';
+            // Перенаправляем на главную (сервер сам решит, куда пустить)
+            window.location.href = '/';
 
         } catch (err) {
             console.error('Login error:', err);

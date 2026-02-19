@@ -41,7 +41,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function syncAndFetchProducts() {
         try {
             productStatusMsg.innerText = 'Синхронизация...';
-            const nomResponse = await fetch('/nomenclature');
+            const nomResponse = await fetch('/api/nomenclature');
             const nomData = await nomResponse.json();
             const names = nomData.data.map(item => item.full_name);
 

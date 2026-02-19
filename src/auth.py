@@ -2,6 +2,7 @@ import os
 from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import Depends, HTTPException, status, Request
+from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
@@ -45,7 +46,7 @@ async def get_current_user(
     request: Request, 
     db: Session = Depends(database.get_db)
 ) -> database.User:
-    # Зависимость: проверяет токен в Cookie и возвращает текущего пользователя
+    # Зависимость: проверяет токен в Cookie и возвращает текущего пользователя (для API)
     token = request.cookies.get("access_token")
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -69,6 +70,25 @@ async def get_current_user(
     if user is None:
         raise credentials_exception
     return user
+
+async def get_current_user_html(
+    request: Request,
+    db: Session = Depends(database.get_db)
+) -> Optional[database.User]:
+    """
+    Версия проверки для HTML-страниц. 
+    Не выдает исключение, а возвращает None, чтобы API мог сделать Redirect.
+    """
+    token = request.cookies.get("access_token")
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        login = payload.get("sub")
+        if not login: return None
+        return crud.get_user_by_login(db, login=login)
+    except:
+        return None
 
 async def admin_only(current_user: database.User = Depends(get_current_user)):
     # Зависимость: ограничивает доступ только для роли 'admin'

@@ -18,6 +18,18 @@
     --radius: 12px;
     --shadow-card: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
     --shadow-hover: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+
+    /* --- Палитра для карточек точек (Пастельные цвета) --- */
+    --point-1: #FFADAD; /* Розовый */
+    --point-2: #FFD6A5; /* Персиковый */
+    --point-3: #FDFFB6; /* Кремовый */
+    --point-4: #CAFFBF; /* Мятный */
+    --point-5: #9BF6FF; /* Небесный */
+    --point-6: #A0C4FF; /* Голубой */
+    --point-7: #BDB2FF; /* Лавандовый */
+    --point-8: #FFC6FF; /* Сиреневый */
+    --point-9: #E9EDC9; /* Оливковый */
+    --point-10: #D8E2DC; # Серебристый
 }
 
 * {

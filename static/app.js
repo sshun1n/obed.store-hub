@@ -78,7 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const unassigned = originalNomenclatureData.filter(i => !i.categories || i.categories.length === 0);
         if (unassigned.length > 0) {
             alertContainer.innerHTML = `
-                <div class="alert alert-danger" onclick="location.href='management.html?filter=none#product-directory'" style="cursor: pointer; margin-bottom: 20px; padding: 15px; border-radius: 8px; background-color: #fee2e2; border: 1px solid #ef4444; color: #b91c1c;">
+                <div class="alert alert-danger" onclick="location.href='/management?filter=none#product-directory'" style="cursor: pointer; margin-bottom: 20px; padding: 15px; border-radius: 8px; background-color: #fee2e2; border: 1px solid #ef4444; color: #b91c1c;">
                     <strong>Внимание!</strong> Обнаружено <strong>${unassigned.length}</strong> товаров без категории. Нажмите для исправления.
                 </div>`;
         } else { alertContainer.innerHTML = ''; }
@@ -115,7 +115,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function loadNomenclature() {
         const loading = document.getElementById('loading'), table = document.getElementById('dataTable');
         try {
-            const response = await fetch('/nomenclature');
+            const response = await fetch('/api/nomenclature');
             const result = await response.json();
             originalNomenclatureData = result.data || [];
             if (originalNomenclatureData.length > 0) {
@@ -221,17 +221,30 @@ document.addEventListener('DOMContentLoaded', () => {
         const container = document.getElementById('ordersContainer'), dateInput = document.getElementById('orderDate');
         if (!dateInput.value) return;
         const apiDate = formatDateForApi(dateInput.value);
-        container.innerHTML = '<p class="text-muted">Загрузка...</p>';
+        container.innerHTML = '<div class="empty-state"><h3>Загрузка...</h3></div>';
+        
+        // Массив пастельных цветов из CSS
+        const pointColors = [
+            'var(--point-1)', 'var(--point-2)', 'var(--point-3)', 'var(--point-4)', 'var(--point-5)',
+            'var(--point-6)', 'var(--point-7)', 'var(--point-8)', 'var(--point-9)', 'var(--point-10)'
+        ];
+
         try {
-            const response = await fetch(`/orders?date=${apiDate}`);
+            const response = await fetch(`/api/orders?date=${apiDate}`);
             const result = await response.json();
             if (!result.data || result.data.length === 0) {
                 container.innerHTML = `<div class="empty-state"><h3>Нет заказов на ${apiDate}</h3></div>`;
                 return;
             }
-            container.innerHTML = result.data.map(order => `
+            container.innerHTML = result.data.map((order, index) => {
+                // Выбираем цвет по порядку (циклично)
+                const color = pointColors[index % pointColors.length];
+                
+                return `
                 <div class="order-card">
-                    <div class="order-header"><span>${order.address}</span></div>
+                    <div class="order-header" style="background-color: ${color}; color: var(--brand-black);">
+                        <span>${order.address}</span>
+                    </div>
                     <div class="order-body">
                         ${order.items.map(item => `
                             <div class="order-item">
@@ -239,7 +252,8 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <span class="item-qty">${item.quantity}</span>
                             </div>`).join('')}
                     </div>
-                </div>`).join('');
+                </div>`;
+            }).join('');
         } catch (err) { container.innerHTML = 'Ошибка загрузки.'; }
     }
 

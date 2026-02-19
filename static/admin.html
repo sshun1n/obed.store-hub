@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Панель управления | OBED.STORE</title>
-    <link rel="icon" type="image/svg+xml" href="img/favicon.svg">
-    <link rel="stylesheet" href="style.css">
+    <link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg">
+    <link rel="stylesheet" href="/static/style.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
@@ -25,7 +25,7 @@
                 <form id="addUserForm" class="form-layout">
                     <input type="text" id="newUserLogin" class="styled-text-input" placeholder="Логин" required>
                     <input type="password" id="newUserPassword" class="styled-text-input" placeholder="Пароль" required>
-                    <input type="text" id="newUserFullName" class="styled-text-input" placeholder="ФИО">
+                    <input type="text" id="newUserFullName" class="styled-text-input" placeholder="Отображаемое имя">
                     <select id="newUserRole" class="styled-text-input">
                         <option value="manager">Менеджер</option>
                         <option value="admin">Администратор</option>
@@ -70,7 +70,7 @@
         </div>
     </div>
 
-    <script src="components.js"></script>
-    <script src="admin.js"></script>
+    <script src="/static/components.js"></script>
+    <script src="/static/admin.js"></script>
 </body>
 </html>
