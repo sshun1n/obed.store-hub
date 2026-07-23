@@ -27,13 +27,9 @@ services:
     volumes:
       - ./reports:/app/reports
       - /etc/localtime:/etc/localtime:ro
-
+      
     security_opt:
       - no-new-privileges:true
-
-networks:
-  proxy:
-    external: true
 
 volumes:
   obed_db_data:
