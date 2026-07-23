@@ -241,7 +241,6 @@ h2 { font-weight: 700; letter-spacing: -0.015em; }
 .container {
     flex: 1;
     min-width: 0;
-    max-width: 1440px;
     padding: 44px 44px 0;
     display: flex;
     flex-direction: column;
@@ -577,13 +576,10 @@ thead th:nth-child(2), tbody td:nth-child(2) { width: 22%; text-align: center; }
 /* ============================================================
    Заказы по точкам
    ============================================================ */
-.orders-grid { display: block; column-width: 330px; column-gap: 14px; width: 100%; }
+.orders-grid { display: flex; flex-direction: column; gap: 16px; width: 100%; }
 
 .order-card {
-    display: inline-block;
     width: 100%;
-    margin-bottom: 14px;
-    break-inside: avoid;
     background: var(--card);
     border: 1px solid var(--line);
     border-radius: var(--radius);
@@ -598,15 +594,22 @@ thead th:nth-child(2), tbody td:nth-child(2) { width: 22%; text-align: center; }
     border-bottom: 1px solid var(--line);
 }
 
+/* блюда точки раскладываются сеткой по ширине экрана */
+.order-body {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    column-gap: 36px;
+    padding: 4px 18px 10px;
+}
+
 .order-item {
     display: flex;
     justify-content: space-between;
     align-items: center;
     gap: 10px;
-    padding: 10px 18px;
+    padding: 10px 0;
     border-bottom: 1px solid var(--line);
 }
-.order-item:last-child { border-bottom: none; }
 
 .item-name-details { display: flex; flex-direction: column; }
 .item-main-name { font-size: 0.87rem; font-weight: 500; }
