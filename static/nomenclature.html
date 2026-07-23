@@ -3,56 +3,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Номенклатура | OBED.STORE</title>
+    <title>Номенклатура | OBED.STORE Hub</title>
     <link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
-
-    <!-- Шапка авто-insert -->
-
     <div class="container">
         <header class="page-header">
+            <span class="eyebrow">Сервис 01</span>
             <h1>Номенклатура</h1>
-            <p class="subtitle">Сводный отчет заказа на производство</p>
+            <p class="subtitle">Сводный заказ на производство по всем точкам.</p>
         </header>
 
-        <!-- Контейнер для критических уведомлений -->
         <div id="alertContainer"></div>
 
-        <!-- Панель управления -->
         <section class="controls-panel">
             <div class="date-control-wrapper">
-                <label for="orderDate" class="control-label">Дата производства:</label>
+                <label for="orderDate" class="control-label">Дата производства</label>
                 <div class="date-input-container">
                     <input type="date" id="orderDate" class="styled-date-input">
-                    <span class="calendar-icon">📅</span>
                 </div>
                 <div class="quick-dates">
                     <button id="todayBtn" class="chip">Сегодня</button>
                     <button id="tomorrowBtn" class="chip">Завтра</button>
-                    <button id="filterBtn" class="chip" style="background-color: var(--brand-yellow); color: var(--brand-black); font-weight: 700;">⚙️ Категории</button>
+                    <button id="filterBtn" class="chip">Категории</button>
                 </div>
             </div>
-            
+
             <div class="input-group">
-                <input type="search" id="searchInput" class="styled-text-input" placeholder="Поиск по названию...">
+                <input type="search" id="searchInput" class="styled-text-input" placeholder="Поиск по названию…">
                 <button id="resetBtn" class="btn" hidden>Сбросить</button>
             </div>
 
             <div class="input-group">
                 <div id="statusMsg" class="status-text"></div>
-                <button class="btn btn-primary" id="pdfBtn">
-                    Скачать PDF Отчет
-                </button>
+                <button class="btn btn-primary" id="pdfBtn">Скачать PDF-отчёт</button>
             </div>
         </section>
 
-        <!-- Таблица -->
         <section class="table-wrapper">
-            <div id="loading" style="padding: 60px; text-align: center; color: var(--text-muted);">
-                Загрузка данных...
+            <div id="loading" style="padding: 56px; text-align: center; color: var(--muted); font-family: var(--mono); font-size: 0.8rem;">
+                Загрузка данных…
             </div>
             <table id="dataTable" style="display: none;">
                 <thead>
@@ -61,24 +55,17 @@
                         <th class="sortable" data-sort-key="quantity">Количество</th>
                     </tr>
                 </thead>
-                <tbody id="tableBody">
-                    <!-- JS вставит данные -->
-                </tbody>
+                <tbody id="tableBody"></tbody>
             </table>
         </section>
     </div>
 
-    <!-- Футер авто-insert -->
-
-    <!-- Модальное окно фильтра категорий -->
     <div id="categoryModal" class="modal" hidden>
         <div class="modal-content">
             <h2 class="card-title-small">Фильтр категорий</h2>
-            <p class="text-muted" style="margin-bottom: 15px; font-size: 0.9rem;">Выберите категории, которые должны попасть в отчет.</p>
-            
-            <div id="filterCategoryTree" class="category-tree" style="max-height: 400px; overflow-y: auto; margin-bottom: 20px;">
-                <!-- Дерево с чекбоксами будет здесь -->
-            </div>
+            <p class="text-muted" style="margin-bottom: 14px; font-size: 0.86rem;">Отмеченные категории попадут в отчёт.</p>
+
+            <div id="filterCategoryTree" class="category-tree" style="max-height: 400px; overflow-y: auto; margin-bottom: 20px;"></div>
 
             <div class="input-group" style="justify-content: flex-end;">
                 <button id="cancelFilterBtn" class="btn btn-secondary">Отмена</button>
@@ -88,6 +75,6 @@
     </div>
 
     <script src="/static/components.js"></script>
-    <script src="/static/app.js?v=1.0.1"></script>
+    <script src="/static/app.js?v=2.0.0"></script>
 </body>
 </html>

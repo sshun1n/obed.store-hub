@@ -78,8 +78,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const unassigned = originalNomenclatureData.filter(i => !i.categories || i.categories.length === 0);
         if (unassigned.length > 0) {
             alertContainer.innerHTML = `
-                <div class="alert alert-danger" onclick="location.href='/management?filter=none#product-directory'" style="cursor: pointer; margin-bottom: 20px; padding: 15px; border-radius: 8px; background-color: #fee2e2; border: 1px solid #ef4444; color: #b91c1c;">
-                    <strong>Внимание!</strong> Обнаружено <strong>${unassigned.length}</strong> товаров без категории. Нажмите для исправления.
+                <div class="alert alert-danger" onclick="location.href='/management?filter=none#product-directory'">
+                    <strong>Без категории: ${unassigned.length}</strong> — эти позиции не попадут в фильтры. Нажмите, чтобы исправить.
                 </div>`;
         } else { alertContainer.innerHTML = ''; }
 
@@ -87,8 +87,8 @@ document.addEventListener('DOMContentLoaded', () => {
         tbody.innerHTML = '';
         processedData.forEach(item => {
             const tr = document.createElement('tr');
-            const catTags = (item.categories || []).map(c => `<span style="font-size: 0.7rem; background: #e5e7eb; padding: 2px 6px; border-radius: 4px; color: #4b5563; margin-right: 4px;">${c}</span>`).join('');
-            const noCat = !item.categories || item.categories.length === 0 ? '<span style="font-size: 0.7rem; color: #ef4444; font-weight: 600;">⚠️ Нет категории</span>' : '';
+            const catTags = (item.categories || []).map(c => `<span class="cat-tag">${c}</span>`).join('');
+            const noCat = !item.categories || item.categories.length === 0 ? '<span class="cat-tag cat-tag-warn">нет категории</span>' : '';
 
             tr.innerHTML = `
                 <td>
@@ -105,7 +105,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('th.sortable').forEach(th => {
             const indicator = th.querySelector('.sort-indicator') || document.createElement('span');
             indicator.className = 'sort-indicator';
-            indicator.textContent = th.dataset.sortKey === currentSort.key ? (currentSort.order === 'asc' ? '▲' : '▼') : '';
+            indicator.textContent = th.dataset.sortKey === currentSort.key ? (currentSort.order === 'asc' ? '↑' : '↓') : '';
             if (!th.querySelector('.sort-indicator')) th.appendChild(indicator);
         });
         
@@ -139,7 +139,7 @@ document.addEventListener('DOMContentLoaded', () => {
         categories.forEach(cat => {
             const checked = !excludedCategoryIds.includes(cat.id);
             html += `<li>
-                <label class="filter-item"><input type="checkbox" class="category-checkbox" data-id="${cat.id}" ${checked ? 'checked' : ''}><span>📂 ${cat.name}</span></label>
+                <label class="filter-item"><input type="checkbox" class="category-checkbox" data-id="${cat.id}" ${checked ? 'checked' : ''}><span>${cat.name}</span></label>
                 ${renderFilterTree(cat.children)}
             </li>`;
         });
@@ -210,7 +210,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('applyFilterBtn').onclick = () => {
             excludedCategoryIds = Array.from(document.querySelectorAll('.category-checkbox:not(:checked)')).map(cb => parseInt(cb.dataset.id, 10));
             modal.classList.remove('open');
-            filterBtn.innerText = excludedCategoryIds.length > 0 ? `⚙️ Категории (${allCategories.length - excludedCategoryIds.length})` : '⚙️ Категории';
+            filterBtn.innerText = excludedCategoryIds.length > 0 ? `Категории (${allCategories.length - excludedCategoryIds.length})` : 'Категории';
             renderNomenclatureTable();
         };
     }

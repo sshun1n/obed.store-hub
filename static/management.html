@@ -3,79 +3,70 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Управление | OBED.STORE</title>
+    <title>Управление | OBED.STORE Hub</title>
     <link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
-    <!-- Шапка будет вставлена сюда автоматически -->
-
     <div class="container">
         <header class="page-header">
+            <span class="eyebrow">Сервис 03</span>
             <h1>Управление</h1>
-            <p class="subtitle">Настройка категорий, продуктов и фильтров</p>
+            <p class="subtitle">Категории, фильтры для цехов и справочник продукции.</p>
         </header>
 
         <div class="management-grid">
-            <!-- Левая колонка: Дерево категорий -->
             <div class="card">
                 <h2 class="card-title-small">Дерево категорий</h2>
                 <div id="categoryTree" class="category-tree">
-                    <!-- Дерево будет рендериться сюда с помощью JS -->
-                    <p class="text-muted">Загрузка категорий...</p>
+                    <p class="text-muted">Загрузка категорий…</p>
                 </div>
             </div>
 
-            <!-- Правая колонка: Формы -->
             <div class="card">
                 <h2 class="card-title-small">Добавить категорию</h2>
                 <form id="addCategoryForm" class="form-layout">
                     <div class="form-group">
-                        <label for="categoryName" class="control-label">Название новой категории</label>
-                        <input type="text" id="categoryName" class="styled-text-input" placeholder="например, 'Горячий цех' или 'Десерты'" required>
+                        <label for="categoryName" class="control-label">Название</label>
+                        <input type="text" id="categoryName" class="styled-text-input" placeholder="Например, «Горячий цех» или «Десерты»" required>
                     </div>
-                    <!-- В будущем здесь будет выбор родительской категории -->
                     <div class="form-group">
                         <label for="parentCategory" class="control-label">Родительская категория</label>
                         <select id="parentCategory" class="styled-text-input">
-                            <option value="">-- Корневая категория --</option>
+                            <option value="">— корневая —</option>
                         </select>
                     </div>
-                    <button type="submit" class="btn btn-primary">Создать</button>
+                    <button type="submit" class="btn btn-primary" style="align-self: flex-start;">Создать</button>
                 </form>
             </div>
         </div>
 
-        <!-- Секция: Справочник продукции -->
         <section id="product-directory" class="management-section">
             <header class="page-header">
-                <h2>Справочник продукции</h2>
-                <p class="subtitle">Привяжите товары из Google Таблиц к категориям и цехам</p>
+                <h2 style="font-size: 1.4rem;">Справочник продукции</h2>
+                <p class="subtitle">Привяжите позиции из Google Таблиц к категориям и цехам.</p>
             </header>
 
             <div class="card">
-                <div class="controls-panel" style="box-shadow: none; padding: 0; margin-bottom: 20px;">
-                    <div class="input-group">
-                        <input type="search" id="productSearchInput" class="styled-text-input" placeholder="Поиск продукта...">
-                        <select id="productCategoryFilter" class="styled-text-input">
-                            <option value="">-- Все категории --</option>
-                            <option value="none">⚠️ Без категории</option>
-                        </select>
-                    </div>
+                <div class="input-group" style="margin-bottom: 16px;">
+                    <input type="search" id="productSearchInput" class="styled-text-input" placeholder="Поиск продукта…">
+                    <select id="productCategoryFilter" class="styled-text-input">
+                        <option value="">— все категории —</option>
+                        <option value="none">Без категории</option>
+                    </select>
                     <div id="productStatusMsg" class="status-text"></div>
                 </div>
 
                 <div id="productList" class="product-list-container">
-                    <p class="text-muted" style="padding: 20px; text-align: center;">Загрузка справочника продукции...</p>
+                    <p class="text-muted" style="padding: 20px; text-align: center;">Загрузка справочника…</p>
                 </div>
             </div>
         </section>
     </div>
 
-    <!-- Футер будет вставлен сюда автоматически -->
-    
-    <!-- Контекстное меню выбора категорий (скрыто по умолчанию) -->
     <div id="categoryContextMenu" class="context-menu" hidden></div>
 
     <script src="/static/components.js"></script>
