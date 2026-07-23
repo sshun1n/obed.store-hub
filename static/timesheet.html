@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Учёт времени | OBED.STORE Hub</title>
+    <link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header class="page-header">
+            <span class="eyebrow">Сервис 04</span>
+            <h1>Учёт рабочего времени</h1>
+            <p class="subtitle">Табель сотрудников, нормы смен и автоматический расчёт зарплаты со штрафами.</p>
+        </header>
+
+        <div id="accessDenied" class="alert-danger" style="display:none; cursor:default;">
+            Раздел доступен только администраторам.
+        </div>
+
+        <div id="tsContent" style="display:none;">
+            <div class="controls-panel">
+                <div class="date-control-wrapper">
+                    <span class="control-label">Период</span>
+                    <input type="date" id="periodStart" class="styled-date-input">
+                    <span class="text-muted">—</span>
+                    <input type="date" id="periodEnd" class="styled-date-input">
+                    <div class="quick-dates">
+                        <button class="chip" id="chipThisMonth">Этот месяц</button>
+                        <button class="chip" id="chipPrevMonth">Прошлый месяц</button>
+                        <button class="chip" id="chipLastImport" style="display:none;">Период табеля</button>
+                    </div>
+                </div>
+                <div class="input-group">
+                    <label class="filter-item" style="padding:0;">
+                        <input type="checkbox" id="showArchived"> архивные
+                    </label>
+                    <input type="file" id="fileInput" accept=".xls,.xlsx" hidden>
+                    <button class="btn btn-primary" id="uploadBtn">Загрузить табель</button>
+                </div>
+            </div>
+
+            <div id="uploadStatus" class="ts-upload-status" style="display:none;"></div>
+
+            <div class="stats-grid" id="statsGrid">
+                <div class="stat-card"><span class="stat-label">Сотрудников</span><span class="stat-value" id="statEmployees">—</span></div>
+                <div class="stat-card"><span class="stat-label">Отработано</span><span class="stat-value" id="statHours">—</span></div>
+                <div class="stat-card"><span class="stat-label">Начислено</span><span class="stat-value" id="statBase">—</span></div>
+                <div class="stat-card"><span class="stat-label">Штрафы</span><span class="stat-value stat-red" id="statPenalty">—</span></div>
+                <div class="stat-card"><span class="stat-label">К выплате</span><span class="stat-value" id="statTotal">—</span></div>
+            </div>
+
+            <div class="table-wrapper ts-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Сотрудник</th>
+                            <th>Смены</th>
+                            <th>Часы</th>
+                            <th>Недоработка</th>
+                            <th>Нарушения</th>
+                            <th>Ставка</th>
+                            <th>Начислено</th>
+                            <th>Штраф</th>
+                            <th>Итого</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="reportBody">
+                        <tr><td colspan="10" class="empty-state">Загрузка…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <p class="text-muted" id="lastImportInfo" style="font-size:0.78rem; margin-top:12px;"></p>
+        </div>
+    </div>
+
+    <!-- Модальное окно настроек сотрудника -->
+    <div class="modal" id="employeeModal">
+        <div class="modal-content">
+            <h2 class="card-title-small" id="modalTitle">Настройки сотрудника</h2>
+            <form id="employeeForm" class="form-layout">
+                <div class="ts-form-row">
+                    <div class="form-group">
+                        <label class="control-label">Тип оплаты</label>
+                        <select id="fPayType" class="styled-text-input" style="min-width:0;">
+                            <option value="shift">За смену</option>
+                            <option value="hour">За час</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="control-label" id="fPayRateLabel">Ставка, ₽</label>
+                        <input type="number" id="fPayRate" class="styled-text-input" style="min-width:0;" min="0" step="0.01" placeholder="0">
+                    </div>
+                </div>
+                <div class="ts-form-row">
+                    <div class="form-group">
+                        <label class="control-label">Норма за смену, часов</label>
+                        <input type="number" id="fNormHours" class="styled-text-input" style="min-width:0;" min="0" step="0.5" placeholder="из графика табеля">
+                    </div>
+                    <div class="form-group">
+                        <label class="control-label">Допуск недоработки, мин</label>
+                        <input type="number" id="fTolerance" class="styled-text-input" style="min-width:0;" min="0" step="5" placeholder="0">
+                    </div>
+                </div>
+                <div class="ts-form-row">
+                    <div class="form-group">
+                        <label class="control-label">Штраф за недоработку, ₽/час</label>
+                        <input type="number" id="fUnderworkPenalty" class="styled-text-input" style="min-width:0;" min="0" step="0.01" placeholder="0">
+                    </div>
+                    <div class="form-group">
+                        <label class="control-label">Штраф за опоздание, ₽/раз</label>
+                        <input type="number" id="fLatePenalty" class="styled-text-input" style="min-width:0;" min="0" step="0.01" placeholder="0">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="control-label">Должность</label>
+                    <input type="text" id="fPosition" class="styled-text-input" placeholder="Не указана">
+                </div>
+                <label class="filter-item">
+                    <input type="checkbox" id="fIsActive"> Активный сотрудник (снимите для архивации)
+                </label>
+                <div class="ts-modal-actions">
+                    <button type="button" class="btn" id="deleteEmployeeBtn" style="color:var(--red); border-color:#EFC7C0;">Удалить</button>
+                    <div style="flex:1;"></div>
+                    <button type="button" class="btn btn-secondary" id="cancelModalBtn">Отмена</button>
+                    <button type="submit" class="btn btn-primary">Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="/static/components.js"></script>
+    <script src="/static/timesheet.js"></script>
+</body>
+</html>
