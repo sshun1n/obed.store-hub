@@ -12,14 +12,14 @@ services:
       POSTGRES_DB: obed_store_db
     volumes:
       - obed_db_data:/var/lib/postgresql/data
-    networks:
-      - proxy
 
   # Основное приложение
   obed-app:
     build: .
     container_name: obed-store-app
     restart: unless-stopped
+    ports:
+      - "8282:8282"
     depends_on:
       - obed-db
     env_file:
@@ -27,25 +27,7 @@ services:
     volumes:
       - ./reports:/app/reports
       - /etc/localtime:/etc/localtime:ro
-    networks:
-      - proxy
 
-    labels:
-      - "traefik.enable=true"
-      # HTTP -> HTTPS Redirect
-      - "traefik.http.routers.obed-store.entrypoints=http"
-      - "traefik.http.routers.obed-store.rule=Host(`obed.sshunin.ru`)"
-      - "traefik.http.middlewares.obed-store-https-redirect.redirectscheme.scheme=https"
-      - "traefik.http.routers.obed-store.middlewares=obed-store-https-redirect"
-      # HTTPS
-      - "traefik.http.routers.obed-store-secure.entrypoints=https"
-      - "traefik.http.routers.obed-store-secure.rule=Host(`obed.sshunin.ru`)"
-      - "traefik.http.routers.obed-store-secure.tls=true"
-      - "traefik.http.routers.obed-store-secure.service=obed-store"
-      # Настройка порта
-      - "traefik.http.services.obed-store.loadbalancer.server.port=8282"
-      - "traefik.docker.network=proxy"
-    
     security_opt:
       - no-new-privileges:true
 
