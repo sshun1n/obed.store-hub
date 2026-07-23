@@ -101,10 +101,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderStats() {
         const rows = currentReport.rows;
-        const active = rows.filter((r) => r.days_worked > 0 || r.absences > 0);
         const sum = (f) => rows.reduce((a, r) => a + f(r), 0);
-        el('statEmployees').textContent = `${active.length} / ${rows.length}`;
-        el('statHours').textContent = fmtHours(sum((r) => r.worked_minutes)) + ' ч';
+        const totalMin = sum((r) => r.worked_minutes);
+        const h = Math.floor(totalMin / 60), m = totalMin % 60;
+        el('statEmployees').textContent = String(rows.length);
+        el('statHours').textContent = totalMin
+            ? `${new Intl.NumberFormat('ru-RU').format(h)} ч ${m} мин`
+            : '0 ч';
         el('statBase').textContent = fmtMoney(sum((r) => r.base_pay));
         el('statPenalty').textContent = fmtMoney(sum((r) => r.underwork_penalty + r.late_penalty_total));
         el('statTotal').textContent = fmtMoney(sum((r) => r.total_pay));
