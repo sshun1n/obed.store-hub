@@ -153,8 +153,10 @@ document.addEventListener('DOMContentLoaded', () => {
     async function toggleDetail(tr, empId) {
         const existing = reportBody.querySelector('.ts-detail-row');
         if (existing) existing.remove();
+        reportBody.querySelectorAll('.ts-row.ts-open').forEach((r) => r.classList.remove('ts-open'));
         if (expandedRowId === empId) { expandedRowId = null; return; }
         expandedRowId = empId;
+        tr.classList.add('ts-open');
 
         const detailTr = document.createElement('tr');
         detailTr.className = 'ts-detail-row';
@@ -188,10 +190,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 </tr>`;
             }).join('');
             detailTr.querySelector('td').innerHTML = `
-                <table class="ts-detail-table">
-                    <thead><tr><th>Дата</th><th>Приход</th><th>Уход</th><th>Наработка</th><th>Норма</th><th>Недоработка</th><th>Нарушения</th></tr></thead>
-                    <tbody>${rows}</tbody>
-                </table>`;
+                <div class="ts-detail-inner">
+                    <table class="ts-detail-table">
+                        <thead><tr><th>Дата</th><th>Приход</th><th>Уход</th><th>Наработка</th><th>Норма</th><th>Недоработка</th><th>Нарушения</th></tr></thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>`;
         } catch (e) {
             detailTr.querySelector('td').innerHTML = `<span class="ts-warn">${esc(e.message)}</span>`;
         }

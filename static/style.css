@@ -241,7 +241,7 @@ h2 { font-weight: 700; letter-spacing: -0.015em; }
 .container {
     flex: 1;
     min-width: 0;
-    max-width: 1160px;
+    max-width: 1440px;
     padding: 44px 44px 0;
     display: flex;
     flex-direction: column;
@@ -930,28 +930,49 @@ body.login-page {
 }
 .ts-actions { text-align: right !important; }
 
+.ts-row td { transition: background 0.12s; }
+.ts-row.ts-open td { background: #FAF9F6; border-bottom-color: transparent; }
+
 .ts-detail-row td.ts-detail-cell {
-    background: var(--paper);
-    padding: 14px 20px 18px;
+    background: #FAF9F6;
+    padding: 4px 22px 20px;
+    border-bottom: 1px solid var(--line);
+}
+.ts-detail-inner {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
 }
 .ts-detail-table { width: 100%; border-collapse: collapse; }
 .ts-detail-table th {
-    background: transparent;
-    padding: 6px 12px;
+    background: var(--paper);
+    padding: 8px 14px;
     font-size: 0.6rem;
+    border-bottom: 1px solid var(--line);
 }
 .ts-detail-table td {
-    padding: 6px 12px;
+    padding: 7px 14px;
     font-family: var(--mono);
     font-size: 0.76rem;
     border-bottom: 1px solid var(--line);
     background: transparent !important;
+    vertical-align: middle;
 }
 .ts-detail-table tr:last-child td { border-bottom: none; }
-.ts-detail-table tr.ts-absence td { color: var(--red); }
+.ts-detail-table tr.ts-absence td { color: var(--red); background: #FDF4F2 !important; }
+.ts-detail-table td:first-child { font-weight: 600; }
 
-.ts-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.ts-modal-actions { display: flex; gap: 10px; margin-top: 6px; }
+.modal-content.ts-modal { max-width: 560px; }
+.ts-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.ts-modal .styled-text-input { width: 100%; min-width: 0; }
+.ts-modal-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+}
 
 @media (max-width: 900px) {
     .ts-form-row { grid-template-columns: 1fr; }

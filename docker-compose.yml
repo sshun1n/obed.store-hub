@@ -18,6 +18,8 @@ services:
     build: .
     container_name: obed-store-app
     restart: unless-stopped
+    ports:
+      - "8282:8282"
     depends_on:
       - obed-db
     env_file:
@@ -25,8 +27,6 @@ services:
     volumes:
       - ./reports:/app/reports
       - /etc/localtime:/etc/localtime:ro
-    ports:
-      - "8282:8282"
       
     security_opt:
       - no-new-privileges:true
