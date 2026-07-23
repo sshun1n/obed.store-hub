@@ -1,7 +1,8 @@
 import os
 from dotenv import load_dotenv
 from sqlalchemy import (
-    create_engine, Column, Integer, String, DateTime, ForeignKey, Boolean
+    create_engine, Column, Integer, String, DateTime, ForeignKey, Boolean,
+    Date, Float, UniqueConstraint
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
@@ -72,6 +73,74 @@ class GoogleConfig(Base):
     spreadsheet_id = Column(String, nullable=False)
     sheet_name = Column(String, nullable=False)
     is_active = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+# --- МОДЕЛИ УЧЁТА РАБОЧЕГО ВРЕМЕНИ ---
+
+class Employee(Base):
+    # Справочник сотрудников: создаются автоматически при загрузке табеля,
+    # настройки оплаты и штрафов задаются вручную в интерфейсе
+    __tablename__ = "employees"
+
+    id = Column(Integer, primary_key=True, index=True)
+    full_name = Column(String, unique=True, index=True, nullable=False)
+    department = Column(String, nullable=True)   # Отдел из табеля
+    position = Column(String, nullable=True)     # Должность из табеля
+    tab_number = Column(String, nullable=True)   # Табельный номер
+    is_active = Column(Boolean, default=True)    # Архивация без удаления истории
+
+    # Оплата: 'shift' — за смену, 'hour' — за час
+    pay_type = Column(String, default='shift')
+    pay_rate = Column(Float, default=0.0)
+
+    # Норма минут за смену (например 540 = 9ч). Если не задана —
+    # берётся значение из колонки "График" табеля за конкретный день
+    norm_minutes = Column(Integer, nullable=True)
+
+    # Штрафы: за час недоработки, допуск без штрафа, фикс за опоздание
+    underwork_penalty_per_hour = Column(Float, default=0.0)
+    underwork_tolerance_min = Column(Integer, default=0)
+    late_penalty = Column(Float, default=0.0)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    sessions = relationship("WorkSession", back_populates="employee", cascade="all, delete-orphan")
+
+class WorkSession(Base):
+    # Одна строка табеля: рабочий день сотрудника
+    __tablename__ = "work_sessions"
+    __table_args__ = (UniqueConstraint('employee_id', 'work_date', name='uq_employee_workdate'),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    employee_id = Column(Integer, ForeignKey("employees.id", ondelete="CASCADE"), nullable=False, index=True)
+    work_date = Column(Date, nullable=False, index=True)
+
+    check_in = Column(String, nullable=True)          # Время прихода "7:23"
+    check_out = Column(String, nullable=True)         # Время ухода "15:40"
+    worked_minutes = Column(Integer, default=0)       # Фактическая наработка
+    schedule_minutes = Column(Integer, nullable=True) # Смена по графику
+    schedule_worked_minutes = Column(Integer, nullable=True) # Наработка в рамках графика
+
+    late_minutes = Column(Integer, default=0)         # Опоздание, минут
+    late_raw = Column(String, nullable=True)          # Исходная строка нарушения
+    early_minutes = Column(Integer, default=0)        # Ранний уход, минут
+    early_raw = Column(String, nullable=True)
+
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    employee = relationship("Employee", back_populates="sessions")
+
+class TimesheetImport(Base):
+    # Журнал загрузок табелей (сам файл после разбора удаляется с диска)
+    __tablename__ = "timesheet_imports"
+
+    id = Column(Integer, primary_key=True, index=True)
+    filename = Column(String, nullable=False)
+    period_start = Column(Date, nullable=True)
+    period_end = Column(Date, nullable=True)
+    employees_count = Column(Integer, default=0)
+    sessions_count = Column(Integer, default=0)
+    uploaded_by = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 # --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---

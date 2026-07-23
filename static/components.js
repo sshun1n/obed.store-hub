@@ -38,8 +38,9 @@ async function loadComponents() {
             ${link('/nomenclature', '01', 'Номенклатура')}
             ${link('/orders', '02', 'Заказы по точкам')}
             ${link('/management', '03', 'Управление')}
+            ${currentUser && currentUser.role === 'admin' ? link('/timesheet', '04', 'Учёт времени') : ''}
             ${currentUser && currentUser.role === 'admin'
-                ? `<div class="side-caption">Система</div>${link('/admin', '04', 'Админ-панель')}`
+                ? `<div class="side-caption">Система</div>${link('/admin', '05', 'Админ-панель')}`
                 : ''}
         </nav>
         <div class="side-user">

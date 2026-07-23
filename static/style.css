@@ -850,6 +850,114 @@ body.login-page {
 }
 
 /* ============================================================
+   Учёт рабочего времени
+   ============================================================ */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 14px;
+    margin-bottom: 18px;
+}
+.stat-card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 14px 18px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.stat-label {
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+}
+.stat-value {
+    font-family: var(--mono);
+    font-size: 1.15rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+}
+.stat-red { color: var(--red); }
+
+.ts-upload-status {
+    background: #EDF3EA;
+    border: 1px solid #C9DCC4;
+    border-left: 3px solid var(--green);
+    color: #24522C;
+    border-radius: 8px;
+    padding: 12px 18px;
+    font-size: 0.86rem;
+    margin-bottom: 18px;
+}
+.ts-upload-status.ts-upload-error {
+    background: #FBEBE8;
+    border-color: #EFC7C0;
+    border-left-color: var(--red);
+    color: #8C2317;
+}
+
+/* таблица отчёта: переопределяем ширины базовой таблицы */
+.ts-table { overflow-x: auto; }
+.ts-table table { min-width: 900px; }
+.ts-table thead th, .ts-table tbody td { width: auto !important; text-align: left !important; }
+.ts-table th, .ts-table td { padding: 11px 14px; }
+.ts-table td { font-size: 0.86rem; }
+
+.ts-row { cursor: pointer; }
+.ts-name { font-weight: 600; font-size: 0.88rem; }
+.ts-position { font-size: 0.72rem; color: var(--muted); }
+.ts-num { font-family: var(--mono); font-size: 0.82rem; white-space: nowrap; }
+.ts-total { font-weight: 600; }
+.ts-warn { color: var(--red); }
+.ts-viol { font-size: 0.74rem; color: var(--ink-soft); white-space: nowrap; }
+.ts-rate-type { color: var(--muted); font-size: 0.68rem; }
+.ts-archived .ts-name, .ts-archived .ts-num { color: var(--muted); }
+.ts-archived .ts-name::after {
+    content: 'архив';
+    font-family: var(--mono);
+    font-size: 0.6rem;
+    color: var(--muted);
+    border: 1px solid var(--line-strong);
+    border-radius: 4px;
+    padding: 1px 5px;
+    margin-left: 8px;
+    vertical-align: 1px;
+}
+.ts-actions { text-align: right !important; }
+
+.ts-detail-row td.ts-detail-cell {
+    background: var(--paper);
+    padding: 14px 20px 18px;
+}
+.ts-detail-table { width: 100%; border-collapse: collapse; }
+.ts-detail-table th {
+    background: transparent;
+    padding: 6px 12px;
+    font-size: 0.6rem;
+}
+.ts-detail-table td {
+    padding: 6px 12px;
+    font-family: var(--mono);
+    font-size: 0.76rem;
+    border-bottom: 1px solid var(--line);
+    background: transparent !important;
+}
+.ts-detail-table tr:last-child td { border-bottom: none; }
+.ts-detail-table tr.ts-absence td { color: var(--red); }
+
+.ts-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.ts-modal-actions { display: flex; gap: 10px; margin-top: 6px; }
+
+@media (max-width: 900px) {
+    .ts-form-row { grid-template-columns: 1fr; }
+}
+
+/* ============================================================
    Адаптивность
    ============================================================ */
 @media (max-width: 900px) {

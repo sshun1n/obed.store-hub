@@ -16,6 +16,7 @@ from src.service import (
 )
 from src.report_generator import ReportGenerator
 import src.api_v1 as api_v1
+import src.api_timesheet as api_timesheet
 from src.database import get_db, Product, Category
 import src.database as database
 import src.crud as crud
@@ -35,8 +36,9 @@ app = FastAPI(
     description="Система управления заказами с серверной авторизацией"
 )
 
-# Подключение роутера API
+# Подключение роутеров API
 app.include_router(api_v1.router, prefix="/api/v1")
+app.include_router(api_timesheet.router, prefix="/api/v1")
 
 # Глобальный словарь для сервисов
 services: Dict[str, Any] = {}
@@ -45,6 +47,11 @@ STATIC_DIR = os.path.join(BASE_DIR, "static")
 
 @app.on_event("startup")
 async def startup_event() -> None:
+    # Создаём недостающие таблицы (операция идемпотентна — существующие не трогает)
+    try:
+        database.init_db()
+    except Exception as e:
+        logger.error(f"Ошибка миграции БД: {e}", exc_info=True)
     try:
         config = AppConfig()
         config.validate()
