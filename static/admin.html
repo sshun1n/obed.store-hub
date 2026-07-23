@@ -3,25 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Панель управления | OBED.STORE</title>
+    <title>Админ-панель | OBED.STORE Hub</title>
     <link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
     <div class="container">
         <header class="page-header">
-            <h1>Панель управления</h1>
-            <p class="subtitle">Настройка пользователей и источников данных</p>
+            <span class="eyebrow">Система</span>
+            <h1>Админ-панель</h1>
+            <p class="subtitle">Пользователи и источники данных.</p>
         </header>
 
         <div class="management-grid">
-            <!-- 1. Секция пользователей -->
             <div class="card">
                 <h2 class="card-title-small">Пользователи</h2>
-                <div id="userList" style="margin-bottom: 24px;"></div>
-                
-                <h3 style="font-size: 1rem; margin-bottom: 12px; font-weight: 700;">Новый пользователь</h3>
+                <div id="userList" style="margin-bottom: 22px;"></div>
+
+                <hr class="form-divider">
+                <h3 class="form-subhead">Новый пользователь</h3>
                 <form id="addUserForm" class="form-layout">
                     <input type="text" id="newUserLogin" class="styled-text-input" placeholder="Логин" required>
                     <input type="password" id="newUserPassword" class="styled-text-input" placeholder="Пароль" required>
@@ -30,42 +33,37 @@
                         <option value="manager">Менеджер</option>
                         <option value="admin">Администратор</option>
                     </select>
-                    <button type="submit" class="btn btn-primary">Добавить</button>
+                    <button type="submit" class="btn btn-primary" style="align-self: flex-start;">Добавить</button>
                 </form>
             </div>
 
-            <!-- 2. Секция Google Таблиц -->
             <div class="card">
                 <h2 class="card-title-small">Google Таблицы</h2>
 
-                <div class="alert" style="background: #e8f4f8; padding: 15px; border-radius: 8px; font-size: 0.9rem; margin-bottom: 20px;">
-                    <strong>Важно:</strong> Предоставьте доступ (Editor) для: <br>
-                    <code id="serviceEmail" style="display: block; margin-top: 8px; padding: 8px; background: white; border: 1px solid #ccc; cursor: pointer; text-align: center;" title="Нажмите, чтобы скопировать">obed-store-service@obedstore-service.iam.gserviceaccount.com</code>
+                <div class="alert-info">
+                    <strong>Доступ.</strong> Выдайте права редактора сервисному аккаунту:
+                    <code id="serviceEmail" class="service-email" title="Нажмите, чтобы скопировать">obed-store-service@obedstore-service.iam.gserviceaccount.com</code>
                 </div>
-                
-                <!-- Шаг 1: Ввод URL -->
+
                 <div id="step1" class="form-layout">
                     <div class="form-group">
                         <label class="control-label">URL новой таблицы</label>
-                        <input type="text" id="sheetUrl" class="styled-text-input" style="width: 100%;" placeholder="https://docs.google.com/spreadsheets/d/...">
+                        <input type="text" id="sheetUrl" class="styled-text-input" style="width: 100%; min-width: 0;" placeholder="https://docs.google.com/spreadsheets/d/…">
                     </div>
-                    <button id="inspectBtn" class="btn btn-primary">Проверить доступ</button>
+                    <button id="inspectBtn" class="btn btn-primary" style="align-self: flex-start;">Проверить доступ</button>
                 </div>
 
-                <!-- Шаг 2: Выбор листа (скрыто) -->
-                <div id="step2" class="form-layout" style="display: none; margin-top: 20px; padding-top: 20px; border-top: 1px dashed #ddd;">
+                <div id="step2" class="form-layout" style="display: none; margin-top: 20px; padding-top: 20px; border-top: 1px dashed var(--line-strong);">
                     <div class="form-group">
-                        <label class="control-label">Выберите лист для работы</label>
+                        <label class="control-label">Лист для работы</label>
                         <select id="worksheetSelect" class="styled-text-input" style="width: 100%;"></select>
                     </div>
-                    <button id="saveConfigBtn" class="btn btn-primary">Подключить и активировать</button>
+                    <button id="saveConfigBtn" class="btn btn-primary" style="align-self: flex-start;">Подключить и активировать</button>
                 </div>
 
-                <!-- Список подключенных -->
-                <div style="margin-top: 30px;">
-                    <h3 style="font-size: 1rem; margin-bottom: 12px; font-weight: 700;">Список подключенных</h3>
-                    <div id="googleConfigList"></div>
-                </div>
+                <hr class="form-divider">
+                <h3 class="form-subhead">Подключённые таблицы</h3>
+                <div id="googleConfigList"></div>
             </div>
         </div>
     </div>

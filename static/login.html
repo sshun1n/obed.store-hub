@@ -5,57 +5,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Вход | OBED.STORE Hub</title>
     <link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet">
-    <style>
-        body {
-            justify-content: center;
-            align-items: center;
-            background-color: #F9FAFB;
-        }
-        .login-card {
-            width: 100%;
-            max-width: 400px;
-            padding: 40px;
-            animation: slideUp 0.5s ease-out;
-        }
-        @keyframes slideUp {
-            from { transform: translateY(20px); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
-        }
-        .login-logo {
-            text-align: center;
-            margin-bottom: 30px;
-        }
-        .login-logo img {
-            height: 64px;
-            margin-bottom: 10px;
-        }
-        .login-header {
-            text-align: center;
-            margin-bottom: 32px;
-        }
-        .error-msg {
-            color: var(--brand-red);
-            font-size: 0.9rem;
-            margin-bottom: 16px;
-            text-align: center;
-            min-height: 1.2em;
-        }
-    </style>
 </head>
-<body>
-    <div class="card login-card">
+<body class="login-page">
+    <div class="login-card">
         <div class="login-logo">
-            <img src="/static/img/logo.svg" alt="Logo">
-            <div class="brand-logo" style="justify-content: center; color: var(--brand-black);">
-                obed.store <span>hub</span>
+            <img src="/static/img/logo.svg" alt="obed.store">
+            <div>
+                <div class="brand-word">obed.store<span>&nbsp;hub</span></div>
+                <div class="brand-sub">рабочая среда</div>
             </div>
         </div>
-        
+
         <header class="login-header">
             <h2>Вход в систему</h2>
-            <p class="text-muted">Введите данные для доступа</p>
+            <p class="text-muted">Логин и пароль выдаёт администратор</p>
         </header>
 
         <div id="errorBox" class="error-msg"></div>
@@ -63,13 +30,13 @@
         <form id="loginForm" class="form-layout">
             <div class="form-group">
                 <label for="username" class="control-label">Логин</label>
-                <input type="text" id="username" class="styled-text-input" style="width: 100%;" required autocomplete="username">
+                <input type="text" id="username" class="styled-text-input" style="width: 100%; min-width: 0;" required autocomplete="username">
             </div>
             <div class="form-group">
                 <label for="password" class="control-label">Пароль</label>
-                <input type="password" id="password" class="styled-text-input" style="width: 100%;" required autocomplete="current-password">
+                <input type="password" id="password" class="styled-text-input" style="width: 100%; min-width: 0;" required autocomplete="current-password">
             </div>
-            <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 10px;">Войти</button>
+            <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 6px;">Войти</button>
         </form>
     </div>
 

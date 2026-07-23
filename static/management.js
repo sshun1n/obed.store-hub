@@ -91,7 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const hasChildren = category.children && category.children.length > 0;
             html += `<li data-id="${category.id}">
                 <div class="category-item">
-                    <span><span class="node-icon">📂</span>${category.name}</span>
+                    <span>${category.name}</span>
                     <div class="category-actions">
                         <button class="action-btn btn-add-child" title="Добавить подкатегорию">[+]</button>
                         <button class="action-btn btn-delete-category" title="Удалить категорию" ${hasChildren ? 'disabled' : ''}>[x]</button>
@@ -138,7 +138,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const currentFilterValue = productCategoryFilter.value;
             productCategoryFilter.innerHTML = `
                 <option value="">-- Все категории --</option>
-                <option value="none">⚠️ Без категории</option>
+                <option value="none">Без категории</option>
             ` + buildDropdownOptions(treeCategories);
             productCategoryFilter.value = currentFilterValue;
             

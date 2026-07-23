@@ -3,82 +3,56 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OBED.STORE | Hub</title>
+    <title>Сервисы | OBED.STORE Hub</title>
     <link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
-    
-    <!-- Шапка вставится сюда автоматически через JS -->
-
     <div class="container">
         <header class="page-header">
+            <span class="eyebrow">obed.store hub</span>
             <h1>Сервисы</h1>
-            <p class="subtitle">Управляйте процессами доставки и производства из одного места.</p>
+            <p class="subtitle">Доставка и производство — из одного места.</p>
         </header>
 
         <div class="grid">
-            <!-- Активная карточка (Номенклатура) -->
-            <a href="/nomenclature" class="card active-card">
-                <div class="card-icon" style="color: var(--brand-green); background: #E8F5E9;">
-                    🥗
-                </div>
-                <div>
-                    <div class="card-title">Номенклатура</div>
-                    <div class="card-desc">
-                        Автоматическая агрегация заказов из Google Таблиц, подсчет порций и формирование PDF для кухни.
-                    </div>
-                </div>
+            <a href="/nomenclature" class="hub-card">
+                <span class="hub-num">01</span>
+                <span class="hub-arrow">→</span>
+                <div class="card-title">Номенклатура</div>
+                <div class="card-desc">Сводка заказов из Google Таблиц: подсчёт порций и PDF-отчёт для кухни.</div>
                 <div class="status-badge status-active">Активен</div>
             </a>
 
-            <a href="/orders" class="card active-card">
-            <div class="card-icon" style="color: var(--brand-yellow); background: #FFF8E1;">
-                📦
-            </div>
-            <div>
+            <a href="/orders" class="hub-card">
+                <span class="hub-num">02</span>
+                <span class="hub-arrow">→</span>
                 <div class="card-title">Заказы по точкам</div>
-                <div class="card-desc">
-                    Просмотр состава заказа для каждого адреса доставки на выбранную дату.
-                </div>
-            </div>
-            <div class="status-badge status-active">Активен</div>
-            </a>
-
-            <!-- Карточка Управление -->
-            <a href="/management" class="card active-card">
-                <div class="card-icon" style="color: var(--brand-purple); background: #F3E5F5;">
-                    ⚙️
-                </div>
-                <div>
-                    <div class="card-title">Управление</div>
-                    <div class="card-desc">
-                        Настройка категорий, фильтров для цехов и управление пользователями системы.
-                    </div>
-                </div>
+                <div class="card-desc">Состав заказа по каждому адресу доставки на выбранную дату.</div>
                 <div class="status-badge status-active">Активен</div>
             </a>
 
-            <!-- Карточка Склад -->
-            <div class="card" style="opacity: 0.7; cursor: default;">
-                <div class="card-icon" style="color: var(--brand-yellow); background: #FFF8E1;">
-                    📦
-                </div>
-                <div>
-                    <div class="card-title">Что-то новенькое</div>
-                    <div class="card-desc">
-                        Может учет остатков продуктов, автоматические заявки на закупку или инвентаризация. Или другие умные слова.
-                    </div>
-                </div>
-                <div class="status-badge status-soon">Скоро</div>
-            </div>
+            <a href="/management" class="hub-card">
+                <span class="hub-num">03</span>
+                <span class="hub-arrow">→</span>
+                <div class="card-title">Управление</div>
+                <div class="card-desc">Категории, фильтры для цехов и привязка продукции из таблиц.</div>
+                <div class="status-badge status-active">Активен</div>
+            </a>
+
+            <a href="/timesheet" class="hub-card">
+                <span class="hub-num">04</span>
+                <span class="hub-arrow">→</span>
+                <div class="card-title">Учёт рабочего времени</div>
+                <div class="card-desc">Табель сотрудников, нормы смен и автоматический расчёт зарплаты со штрафами.</div>
+                <div class="status-badge status-active">Активен</div>
+            </a>
         </div>
     </div>
 
-    <!-- Футер вставится сюда автоматически -->
-
-    <!-- Подключаем наш скрипт компонентов -->
     <script src="/static/components.js"></script>
 </body>
 </html>
