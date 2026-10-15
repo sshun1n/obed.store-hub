@@ -1,17 +1,22 @@
-# Модуль "Учёт рабочего времени": загрузка табеля, сотрудники, расчёт зарплаты.
+# Модуль "Учёт рабочего времени": загрузка табеля и расчёт зарплаты.
+# Справочник сотрудников, графики и отсутствия — в api_employees.py.
 # Доступ ко всем эндпоинтам — только для администраторов (данные о з/п).
 
 import os
 import logging
 import tempfile
 from datetime import date
-from typing import List, Optional
+from typing import Callable, Dict, Iterable, List
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from sqlalchemy.orm import Session
 
 from src import auth, schemas
-from src.database import get_db, Employee, WorkSession, TimesheetImport
+from src.database import (
+    get_db, Employee, EmployeeAlias, WorkSession, TimesheetImport,
+    WorkSchedule, EmployeeAbsence,
+)
+from src.payroll import compute_days, calc_totals, DayResult
 from src.timesheet_parser import parse_timesheet, TimesheetParseError
 
 logger = logging.getLogger("Timesheet")
@@ -20,70 +25,75 @@ router = APIRouter(prefix="/timesheet", tags=["Учёт рабочего вре�
 
 ALLOWED_EXTENSIONS = ('.xls', '.xlsx')
 MAX_UPLOAD_SIZE = 20 * 1024 * 1024  # 20 МБ — табель весит сотни КБ
+MAX_PERIOD_DAYS = 366
 
 
-# --- РАСЧЁТ ЗАРПЛАТЫ ---
+# --- ОБЩИЕ ХЕЛПЕРЫ (используются и в api_employees) ---
 
-def _day_norm(employee: Employee, session: WorkSession) -> Optional[int]:
-    # Норма на день: персональная настройка приоритетнее графика из табеля
-    if employee.norm_minutes:
-        return employee.norm_minutes
-    return session.schedule_minutes
+def validate_period(start: date, end: date) -> None:
+    if end < start:
+        raise HTTPException(status_code=400, detail="Конец периода раньше начала")
+    if (end - start).days > MAX_PERIOD_DAYS:
+        raise HTTPException(status_code=400, detail="Период не может превышать один год")
 
 
-def calc_payroll_row(employee: Employee, sessions: List[WorkSession]) -> schemas.PayrollRow:
-    """Считает итог по сотруднику за период по его настройкам оплаты."""
-    days_worked = 0
-    absences = 0
-    worked_minutes = 0
-    norm_total = 0
-    shortfall_total = 0
-    late_count = 0
-    early_count = 0
-    tolerance = employee.underwork_tolerance_min or 0
+def coverage_checker(db: Session) -> Callable[[date], bool]:
+    """Есть ли за день загруженные данные табеля. Будущие дни не покрыты никогда."""
+    periods = [
+        (p_start, p_end)
+        for p_start, p_end in db.query(TimesheetImport.period_start, TimesheetImport.period_end).all()
+        if p_start and p_end
+    ]
+    today = date.today()
 
-    for s in sessions:
-        norm = _day_norm(employee, s)
-        if s.worked_minutes and s.worked_minutes > 0:
-            days_worked += 1
-            worked_minutes += s.worked_minutes
-            if norm:
-                norm_total += norm
-                shortfall = norm - s.worked_minutes
-                if shortfall > tolerance:
-                    shortfall_total += shortfall
-            if s.late_minutes and s.late_minutes > 0:
-                late_count += 1
-            if s.early_minutes and s.early_minutes > 0:
-                early_count += 1
-        elif norm:
-            # По графику должен был работать, но присутствий нет — прогул
-            absences += 1
+    def is_covered(d: date) -> bool:
+        return d <= today and any(p_start <= d <= p_end for p_start, p_end in periods)
 
-    rate = employee.pay_rate or 0.0
-    if employee.pay_type == 'hour':
-        base_pay = round(worked_minutes / 60 * rate, 2)
-    else:  # 'shift'
-        base_pay = round(days_worked * rate, 2)
+    return is_covered
 
-    underwork_penalty = round(shortfall_total / 60 * (employee.underwork_penalty_per_hour or 0), 2)
-    late_penalty_total = round(late_count * (employee.late_penalty or 0), 2)
-    total_pay = round(base_pay - underwork_penalty - late_penalty_total, 2)
 
-    return schemas.PayrollRow(
-        employee=schemas.Employee.model_validate(employee),
-        days_worked=days_worked,
-        absences=absences,
-        worked_minutes=worked_minutes,
-        norm_total_minutes=norm_total,
-        shortfall_minutes=shortfall_total,
-        late_count=late_count,
-        early_count=early_count,
-        base_pay=base_pay,
-        underwork_penalty=underwork_penalty,
-        late_penalty_total=late_penalty_total,
-        total_pay=total_pay,
-    )
+def compute_days_for(
+    db: Session,
+    employees: Iterable[Employee],
+    start: date,
+    end: date,
+) -> Dict[int, List[DayResult]]:
+    """План/факт по дням для набора сотрудников — тремя запросами на всех."""
+    employees = list(employees)
+    ids = [e.id for e in employees]
+    if not ids:
+        return {}
+
+    sessions: Dict[int, Dict[date, WorkSession]] = {}
+    for s in (db.query(WorkSession)
+              .filter(WorkSession.employee_id.in_(ids),
+                      WorkSession.work_date >= start, WorkSession.work_date <= end)):
+        sessions.setdefault(s.employee_id, {})[s.work_date] = s
+
+    schedules: Dict[int, List[WorkSchedule]] = {}
+    for s in (db.query(WorkSchedule)
+              .filter(WorkSchedule.employee_id.in_(ids),
+                      WorkSchedule.date_from <= end)):
+        if s.date_to is None or s.date_to >= start:
+            schedules.setdefault(s.employee_id, []).append(s)
+
+    absences: Dict[int, List[EmployeeAbsence]] = {}
+    for a in (db.query(EmployeeAbsence)
+              .filter(EmployeeAbsence.employee_id.in_(ids),
+                      EmployeeAbsence.date_from <= end, EmployeeAbsence.date_to >= start)
+              .order_by(EmployeeAbsence.date_from)):
+        absences.setdefault(a.employee_id, []).append(a)
+
+    is_covered = coverage_checker(db)
+    return {
+        e.id: compute_days(e, sessions.get(e.id, {}), schedules.get(e.id, []),
+                           absences.get(e.id, []), start, end, is_covered)
+        for e in employees
+    }
+
+
+def employee_label(e) -> str:
+    return (e.display_name or e.full_name or '').strip()
 
 
 # --- ЗАГРУЗКА ТАБЕЛЯ ---
@@ -126,8 +136,10 @@ async def upload_timesheet(
             except OSError as e:
                 logger.error(f"Не удалось удалить временный файл {tmp_path}: {e}")
 
-    # Записываем в БД: сотрудники создаются автоматически, смены обновляются (upsert)
+    # Сотрудник ищется по ФИО из табеля или по одному из его альтернативных написаний
     employees_by_name = {e.full_name: e for e in db.query(Employee).all()}
+    for alias in db.query(EmployeeAlias).all():
+        employees_by_name.setdefault(alias.name, alias.employee)
     new_employees = 0
     sessions_saved = 0
 
@@ -145,7 +157,7 @@ async def upload_timesheet(
             employees_by_name[block.full_name] = emp
             new_employees += 1
         else:
-            # Обновляем справочные поля, если в табеле появились данные
+            # Дополняем только пустые поля — ручные правки не перетираем
             if block.department and not emp.department:
                 emp.department = block.department
             if block.position and not emp.position:
@@ -166,6 +178,7 @@ async def upload_timesheet(
             if not s:
                 s = WorkSession(employee_id=emp.id, work_date=day.work_date)
                 db.add(s)
+                existing[day.work_date] = s
             s.check_in = day.check_in
             s.check_out = day.check_out
             s.worked_minutes = day.worked_minutes
@@ -206,72 +219,6 @@ def list_imports(db: Session = Depends(get_db), admin: schemas.User = Depends(au
             .limit(20).all())
 
 
-# --- СОТРУДНИКИ ---
-
-@router.get("/employees", response_model=List[schemas.Employee])
-def list_employees(
-    include_archived: bool = Query(False),
-    db: Session = Depends(get_db),
-    admin: schemas.User = Depends(auth.admin_only),
-):
-    q = db.query(Employee)
-    if not include_archived:
-        q = q.filter(Employee.is_active == True)
-    return q.order_by(Employee.full_name).all()
-
-
-@router.put("/employees/{employee_id}", response_model=schemas.Employee)
-def update_employee(
-    employee_id: int,
-    data: schemas.EmployeeUpdate,
-    db: Session = Depends(get_db),
-    admin: schemas.User = Depends(auth.admin_only),
-):
-    emp = db.query(Employee).filter(Employee.id == employee_id).first()
-    if not emp:
-        raise HTTPException(status_code=404, detail="Сотрудник не найден")
-
-    update = data.model_dump(exclude_unset=True)
-    if 'pay_type' in update and update['pay_type'] not in ('shift', 'hour'):
-        raise HTTPException(status_code=400, detail="pay_type должен быть 'shift' или 'hour'")
-    for key, value in update.items():
-        setattr(emp, key, value)
-    db.commit()
-    db.refresh(emp)
-    return emp
-
-
-@router.delete("/employees/{employee_id}")
-def delete_employee(
-    employee_id: int,
-    db: Session = Depends(get_db),
-    admin: schemas.User = Depends(auth.admin_only),
-):
-    """Полное удаление сотрудника вместе с историей смен."""
-    emp = db.query(Employee).filter(Employee.id == employee_id).first()
-    if not emp:
-        raise HTTPException(status_code=404, detail="Сотрудник не найден")
-    db.delete(emp)
-    db.commit()
-    return {"ok": True}
-
-
-@router.get("/employees/{employee_id}/sessions", response_model=List[schemas.WorkSessionOut])
-def employee_sessions(
-    employee_id: int,
-    start: date = Query(...),
-    end: date = Query(...),
-    db: Session = Depends(get_db),
-    admin: schemas.User = Depends(auth.admin_only),
-):
-    """Детализация по дням для одного сотрудника."""
-    return (db.query(WorkSession)
-            .filter(WorkSession.employee_id == employee_id,
-                    WorkSession.work_date >= start,
-                    WorkSession.work_date <= end)
-            .order_by(WorkSession.work_date).all())
-
-
 # --- ОТЧЁТ ПО ЗАРПЛАТЕ ---
 
 @router.get("/report", response_model=schemas.PayrollReport)
@@ -283,25 +230,27 @@ def payroll_report(
     admin: schemas.User = Depends(auth.admin_only),
 ):
     """Сводный расчёт по всем сотрудникам за период."""
-    if end < start:
-        raise HTTPException(status_code=400, detail="Конец периода раньше начала")
-    if (end - start).days > 366:
-        raise HTTPException(status_code=400, detail="Период не может превышать один год")
+    validate_period(start, end)
 
     q = db.query(Employee)
     if not include_archived:
         q = q.filter(Employee.is_active == True)
-    employees = q.order_by(Employee.full_name).all()
+    employees = q.all()
+    days_by_emp = compute_days_for(db, employees, start, end)
 
-    sessions = (db.query(WorkSession)
-                .filter(WorkSession.work_date >= start, WorkSession.work_date <= end)
-                .all())
-    by_employee = {}
-    for s in sessions:
-        by_employee.setdefault(s.employee_id, []).append(s)
+    rows = []
+    for emp in employees:
+        days = days_by_emp.get(emp.id, [])
+        totals = calc_totals(emp, days)
+        rows.append(schemas.PayrollRow(
+            employee=schemas.Employee.model_validate(emp),
+            has_schedule=any(d.source == 'schedule' for d in days),
+            **vars(totals),
+        ))
 
-    rows = [calc_payroll_row(emp, by_employee.get(emp.id, [])) for emp in employees]
-    # Сотрудники без смен за период — в конец списка
-    rows.sort(key=lambda r: (r.days_worked == 0 and r.absences == 0, r.employee.full_name.lower()))
+    # Сотрудники без единого события за период — в конец списка
+    def is_empty(r: schemas.PayrollRow) -> bool:
+        return not (r.days_worked or r.absences or r.vacation_days or r.sick_days or r.dayoff_days)
 
+    rows.sort(key=lambda r: (is_empty(r), employee_label(r.employee).lower()))
     return schemas.PayrollReport(period_start=start, period_end=end, rows=rows)

@@ -1,12 +1,15 @@
 import os
+import logging
 from dotenv import load_dotenv
 from sqlalchemy import (
     create_engine, Column, Integer, String, DateTime, ForeignKey, Boolean,
-    Date, Float, UniqueConstraint
+    Date, Float, UniqueConstraint, inspect, text
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
+
+logger = logging.getLogger("Database")
 
 # Загружаем переменные окружения из .env
 load_dotenv()
@@ -83,10 +86,14 @@ class Employee(Base):
     __tablename__ = "employees"
 
     id = Column(Integer, primary_key=True, index=True)
+    # ФИО ровно как в табеле — по нему сопоставляются строки при загрузке
     full_name = Column(String, unique=True, index=True, nullable=False)
+    display_name = Column(String, nullable=True) # Отображаемое имя (алиас) в интерфейсе
     department = Column(String, nullable=True)   # Отдел из табеля
     position = Column(String, nullable=True)     # Должность из табеля
     tab_number = Column(String, nullable=True)   # Табельный номер
+    phone = Column(String, nullable=True)
+    notes = Column(String, nullable=True)
     is_active = Column(Boolean, default=True)    # Архивация без удаления истории
 
     # Оплата: 'shift' — за смену, 'hour' — за час
@@ -101,10 +108,67 @@ class Employee(Base):
     underwork_penalty_per_hour = Column(Float, default=0.0)
     underwork_tolerance_min = Column(Integer, default=0)
     late_penalty = Column(Float, default=0.0)
+    late_tolerance_min = Column(Integer, default=0)  # Опоздание до N минут не штрафуется
 
     created_at = Column(DateTime, default=datetime.utcnow)
 
     sessions = relationship("WorkSession", back_populates="employee", cascade="all, delete-orphan")
+    aliases = relationship("EmployeeAlias", back_populates="employee", cascade="all, delete-orphan")
+    schedules = relationship("WorkSchedule", back_populates="employee", cascade="all, delete-orphan")
+    absences = relationship("EmployeeAbsence", back_populates="employee", cascade="all, delete-orphan")
+
+class EmployeeAlias(Base):
+    # Дополнительные написания ФИО в табелях, которые относятся к этому сотруднику
+    # ("Тарасов Михаил" и "Тарасов Михаил Александрович" — один человек)
+    __tablename__ = "employee_aliases"
+
+    id = Column(Integer, primary_key=True, index=True)
+    employee_id = Column(Integer, ForeignKey("employees.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String, unique=True, index=True, nullable=False)
+
+    employee = relationship("Employee", back_populates="aliases")
+
+class WorkSchedule(Base):
+    # График работы на период. При пересечении периодов действует тот,
+    # что начался позже
+    __tablename__ = "work_schedules"
+
+    id = Column(Integer, primary_key=True, index=True)
+    employee_id = Column(Integer, ForeignKey("employees.id", ondelete="CASCADE"), nullable=False, index=True)
+    date_from = Column(Date, nullable=False)
+    date_to = Column(Date, nullable=True)            # None — бессрочно
+
+    kind = Column(String, nullable=False, default='weekly')  # 'weekly' | 'cycle'
+    weekdays = Column(String, nullable=True)         # "0,1,2,3,4", 0 — понедельник
+    cycle_work = Column(Integer, nullable=True)      # 2/2: рабочих дней в цикле
+    cycle_off = Column(Integer, nullable=True)       # 2/2: выходных в цикле
+    cycle_start = Column(Date, nullable=True)        # Первый рабочий день цикла
+
+    shift_start = Column(String, nullable=True)      # "09:00"
+    shift_end = Column(String, nullable=True)        # "18:00"
+    break_minutes = Column(Integer, default=0)
+    shift_minutes = Column(Integer, nullable=True)   # Явная длительность смены, приоритетнее времени
+    note = Column(String, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    employee = relationship("Employee", back_populates="schedules")
+
+class EmployeeAbsence(Base):
+    # Уважительное отсутствие: отпуск, больничный, отгул
+    __tablename__ = "employee_absences"
+
+    id = Column(Integer, primary_key=True, index=True)
+    employee_id = Column(Integer, ForeignKey("employees.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind = Column(String, nullable=False)            # 'vacation' | 'sick' | 'dayoff'
+    date_from = Column(Date, nullable=False)
+    date_to = Column(Date, nullable=False)
+    paid = Column(Boolean, default=False)
+    note = Column(String, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    employee = relationship("Employee", back_populates="absences")
 
 class WorkSession(Base):
     # Одна строка табеля: рабочий день сотрудника
@@ -145,9 +209,39 @@ class TimesheetImport(Base):
 
 # --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 
+def _sql_default(value) -> str:
+    if isinstance(value, bool):
+        return " DEFAULT TRUE" if value else " DEFAULT FALSE"
+    if isinstance(value, (int, float)):
+        return f" DEFAULT {value}"
+    if isinstance(value, str):
+        return " DEFAULT '" + value.replace("'", "''") + "'"
+    return ""
+
+def _add_missing_columns():
+    # create_all не меняет уже существующие таблицы, поэтому новые колонки
+    # моделей добавляем сами (только ADD COLUMN, без удаления и изменения типов)
+    insp = inspect(engine)
+    existing_tables = set(insp.get_table_names())
+    with engine.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            if table.name not in existing_tables:
+                continue
+            present = {c["name"] for c in insp.get_columns(table.name)}
+            for col in table.columns:
+                if col.name in present or col.primary_key:
+                    continue
+                ddl_type = col.type.compile(dialect=engine.dialect)
+                default = ""
+                if col.default is not None and getattr(col.default, "is_scalar", False):
+                    default = _sql_default(col.default.arg)
+                conn.execute(text(f"ALTER TABLE {table.name} ADD COLUMN {col.name} {ddl_type}{default}"))
+                logger.info(f"Миграция: добавлена колонка {table.name}.{col.name}")
+
 def init_db():
-    # Создает все описанные выше таблицы в PostgreSQL
+    # Создает недостающие таблицы и колонки (идемпотентно)
     Base.metadata.create_all(bind=engine)
+    _add_missing_columns()
 
 def get_db():
     # Зависимость для эндпоинтов (управление сессиями)

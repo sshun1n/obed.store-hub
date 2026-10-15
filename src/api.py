@@ -17,6 +17,7 @@ from src.service import (
 from src.report_generator import ReportGenerator
 import src.api_v1 as api_v1
 import src.api_timesheet as api_timesheet
+import src.api_employees as api_employees
 from src.database import get_db, Product, Category
 import src.database as database
 import src.crud as crud
@@ -39,6 +40,7 @@ app = FastAPI(
 # Подключение роутеров API
 app.include_router(api_v1.router, prefix="/api/v1")
 app.include_router(api_timesheet.router, prefix="/api/v1")
+app.include_router(api_employees.router, prefix="/api/v1")
 
 # Глобальный словарь для сервисов
 services: Dict[str, Any] = {}
