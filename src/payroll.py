@@ -148,8 +148,25 @@ class DayResult:
     early_minutes: int = 0
     late_counted: bool = False       # опоздание сверх допуска — идёт в штраф
     planned_work: Optional[bool] = None  # по своему графику: True — рабочий, False — выходной
+    punch_issue: Optional[str] = None    # no_exit | no_entry | no_marks — см. detect_punch_issue
     absence_paid: bool = False
     absence_note: Optional[str] = None
+
+
+def detect_punch_issue(session: Optional[WorkSession]) -> Optional[str]:
+    """Неполные отметки. Если сотрудник не отметил уход, система учёта продлевает
+    присутствие до полуночи (уход 0:00), а следующие дни идут как 0:00–0:00 (24 ч),
+    пока не появится отметка. Такая наработка не отражает реальное время."""
+    if not session or not (session.worked_minutes or 0):
+        return None
+    ci, co = session.check_in, session.check_out
+    if ci == '0:00' and co == '0:00':
+        return 'no_marks'
+    if co == '0:00':
+        return 'no_exit'
+    if ci == '0:00':
+        return 'no_entry'
+    return None
 
 
 def _late_early_by_schedule(s: WorkSchedule, session: WorkSession):
@@ -192,6 +209,7 @@ def compute_days(
         day = DayResult(work_date=d, status='none', worked_minutes=worked)
         if session:
             day.check_in, day.check_out = session.check_in, session.check_out
+            day.punch_issue = detect_punch_issue(session)
 
         absence = pick_absence(absences, d)
         schedule = pick_schedule(schedules, d)
@@ -258,6 +276,7 @@ class PayrollTotals:
     shortfall_minutes: int = 0
     late_count: int = 0
     early_count: int = 0
+    punch_issues: int = 0            # Дни с неполными отметками — требуют проверки
     base_pay: float = 0.0
     absence_pay: float = 0.0
     underwork_penalty: float = 0.0
@@ -283,6 +302,8 @@ def calc_totals(employee: Employee, days: Sequence[DayResult]) -> PayrollTotals:
                 t.late_count += 1
             if day.early_minutes > 0:
                 t.early_count += 1
+            if day.punch_issue:
+                t.punch_issues += 1
         elif day.status == 'absent':
             t.absences += 1
         elif day.status in ABSENCE_LABELS:

@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Карточка сотрудника | OBED.STORE Hub</title>
+    <link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css?v=1.8.0">
+</head>
+<body>
+    <div class="container">
+        <a class="back-link" href="/employees">← Все сотрудники</a>
+
+        <div id="accessDenied" class="alert-danger" style="display:none; cursor:default;">
+            Раздел доступен только администраторам.
+        </div>
+        <div id="notFound" class="empty-state" style="display:none;">
+            <h3>Сотрудник не найден</h3>
+            Возможно, карточка была удалена или объединена с другой.
+        </div>
+
+        <div id="pageContent" style="display:none;">
+            <header class="page-header emp-header">
+                <div class="emp-header-main">
+                    <span class="eyebrow">Карточка сотрудника</span>
+                    <h1 id="empTitle">…</h1>
+                    <p class="subtitle" id="empSubtitle"></p>
+                </div>
+                <div class="emp-header-actions">
+                    <button class="btn btn-secondary" id="mergeBtn">Объединить с дублем</button>
+                    <button class="btn btn-secondary" id="archiveBtn">В архив</button>
+                    <button class="btn btn-danger-ghost" id="deleteBtn">Удалить</button>
+                </div>
+            </header>
+
+            <div id="archivedBanner" class="alert-info archived-banner" style="display:none;">
+                Сотрудник в архиве: он скрыт из отчёта по зарплате и справочника активных.
+                История смен сохранена.
+            </div>
+
+            <div class="emp-layout">
+                <div class="emp-col">
+                    <section class="card">
+                        <h2 class="card-title-small">Основное</h2>
+                        <form id="profileForm" class="form-layout">
+                            <div class="form-group">
+                                <label class="control-label" for="fDisplayName">Отображаемое имя</label>
+                                <input type="text" id="fDisplayName" class="styled-text-input" placeholder="Как в табеле">
+                                <span class="field-hint">Так сотрудник называется в интерфейсе. На привязку к табелю не влияет.</span>
+                            </div>
+                            <div class="form-group">
+                                <label class="control-label">ФИО в табелях</label>
+                                <div class="alias-list" id="aliasList"></div>
+                                <div class="alias-add">
+                                    <input type="text" id="aliasInput" class="styled-text-input" placeholder="Другое написание ФИО">
+                                    <button type="button" class="btn btn-secondary" id="aliasAddBtn">Привязать</button>
+                                </div>
+                                <span class="field-hint">Строки табеля с любым из этих написаний попадут к этому сотруднику.</span>
+                            </div>
+                            <div class="form-grid-2">
+                                <div class="form-group">
+                                    <label class="control-label" for="fDepartment">Отдел</label>
+                                    <input type="text" id="fDepartment" class="styled-text-input">
+                                </div>
+                                <div class="form-group">
+                                    <label class="control-label" for="fPosition">Должность</label>
+                                    <input type="text" id="fPosition" class="styled-text-input" placeholder="Не указана">
+                                </div>
+                                <div class="form-group">
+                                    <label class="control-label" for="fTabNumber">Табельный №</label>
+                                    <input type="text" id="fTabNumber" class="styled-text-input">
+                                </div>
+                                <div class="form-group">
+                                    <label class="control-label" for="fPhone">Телефон</label>
+                                    <input type="tel" id="fPhone" class="styled-text-input">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label class="control-label" for="fNotes">Заметка</label>
+                                <textarea id="fNotes" class="styled-text-input" rows="2"></textarea>
+                            </div>
+                            <div class="form-footer">
+                                <button type="submit" class="btn btn-primary">Сохранить</button>
+                            </div>
+                        </form>
+                    </section>
+
+                    <section class="card">
+                        <h2 class="card-title-small">Оплата и штрафы</h2>
+                        <form id="payForm" class="form-layout">
+                            <div class="form-grid-2">
+                                <div class="form-group">
+                                    <label class="control-label">Тип оплаты</label>
+                                    <div class="seg seg-full" id="fPayType">
+                                        <button type="button" class="seg-btn" data-value="shift">За смену</button>
+                                        <button type="button" class="seg-btn" data-value="hour">За час</button>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label class="control-label" for="fPayRate" id="fPayRateLabel">Ставка, ₽</label>
+                                    <input type="number" id="fPayRate" class="styled-text-input" min="0" step="0.01" placeholder="0">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label class="control-label" for="fNormHours">Норма смены по умолчанию, ч</label>
+                                <input type="number" id="fNormHours" class="styled-text-input" min="0" max="24" step="0.25" placeholder="Не задана">
+                                <span class="field-hint">Используется, когда в графике не указана длительность смены. Если своего графика нет — заменяет норму из табеля.</span>
+                            </div>
+                            <div class="form-grid-2">
+                                <div class="form-group">
+                                    <label class="control-label" for="fUnderPenalty">Штраф за недоработку, ₽/ч</label>
+                                    <input type="number" id="fUnderPenalty" class="styled-text-input" min="0" step="0.01" placeholder="0">
+                                </div>
+                                <div class="form-group">
+                                    <label class="control-label" for="fUnderTol">Допуск недоработки, мин</label>
+                                    <input type="number" id="fUnderTol" class="styled-text-input" min="0" step="5" placeholder="0">
+                                </div>
+                                <div class="form-group">
+                                    <label class="control-label" for="fLatePenalty">Штраф за опоздание, ₽</label>
+                                    <input type="number" id="fLatePenalty" class="styled-text-input" min="0" step="0.01" placeholder="0">
+                                </div>
+                                <div class="form-group">
+                                    <label class="control-label" for="fLateTol">Допуск опоздания, мин</label>
+                                    <input type="number" id="fLateTol" class="styled-text-input" min="0" step="1" placeholder="0">
+                                </div>
+                            </div>
+                            <div class="form-footer">
+                                <button type="submit" class="btn btn-primary">Сохранить</button>
+                            </div>
+                        </form>
+                    </section>
+                </div>
+
+                <div class="emp-col">
+                    <section class="card">
+                        <div class="card-head">
+                            <h2>Календарь</h2>
+                            <div class="cal-nav">
+                                <button class="icon-btn" id="calPrev" aria-label="Предыдущий месяц">‹</button>
+                                <span class="cal-month" id="calMonth"></span>
+                                <button class="icon-btn" id="calNext" aria-label="Следующий месяц">›</button>
+                                <button class="chip" id="calToday">Сегодня</button>
+                                <button class="chip" id="calLast" style="display:none;">Последняя смена</button>
+                            </div>
+                        </div>
+                        <div class="cal" id="calendar"></div>
+                        <div class="cal-legend">
+                            <span><i class="lg st-work"></i>Отработано</span>
+                            <span><i class="lg st-planned"></i>По графику</span>
+                            <span><i class="lg st-absent"></i>Прогул</span>
+                            <span><i class="lg st-extra"></i>Вне графика</span>
+                            <span><i class="lg st-vacation"></i>Отпуск</span>
+                            <span><i class="lg st-sick"></i>Больничный</span>
+                            <span><i class="lg st-dayoff"></i>Отгул</span>
+                            <span><i class="lg st-off"></i>Выходной</span>
+                        </div>
+                        <div class="cal-summary" id="calSummary"></div>
+                    </section>
+
+                    <section class="card">
+                        <div class="card-head">
+                            <h2>Графики работы</h2>
+                            <button class="btn btn-secondary btn-sm" id="addScheduleBtn">+ График</button>
+                        </div>
+                        <div id="scheduleList" class="item-list"></div>
+                    </section>
+
+                    <section class="card">
+                        <div class="card-head">
+                            <h2>Отпуска, больничные, отгулы</h2>
+                            <button class="btn btn-secondary btn-sm" id="addAbsenceBtn">+ Отсутствие</button>
+                        </div>
+                        <div id="absenceList" class="item-list"></div>
+                    </section>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- График -->
+    <div class="modal" id="scheduleModal">
+        <div class="modal-content modal-wide">
+            <h2 class="card-title-small" id="scheduleModalTitle">Новый график</h2>
+            <form id="scheduleForm" class="form-layout">
+                <div class="form-grid-2">
+                    <div class="form-group">
+                        <label class="control-label" for="sFrom">Действует с</label>
+                        <input type="date" id="sFrom" class="styled-date-input" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="control-label" for="sTo">по</label>
+                        <input type="date" id="sTo" class="styled-date-input">
+                        <span class="field-hint">Пусто — бессрочно.</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="control-label">Тип графика</label>
+                    <div class="seg seg-full" id="sKind">
+                        <button type="button" class="seg-btn active" data-value="weekly">По дням недели</button>
+                        <button type="button" class="seg-btn" data-value="cycle">Сменный (2/2, 1/3…)</button>
+                    </div>
+                </div>
+
+                <div class="form-group" id="sWeeklyBlock">
+                    <label class="control-label">Рабочие дни</label>
+                    <div class="wd-toggles" id="sWeekdays"></div>
+                    <div class="quick-dates">
+                        <button type="button" class="chip" data-wd="0,1,2,3,4">Пн–Пт</button>
+                        <button type="button" class="chip" data-wd="0,1,2,3,4,5">Пн–Сб</button>
+                        <button type="button" class="chip" data-wd="0,1,2,3,4,5,6">Ежедневно</button>
+                    </div>
+                </div>
+
+                <div id="sCycleBlock" style="display:none;">
+                    <div class="form-group">
+                        <label class="control-label">Шаблон</label>
+                        <div class="quick-dates">
+                            <button type="button" class="chip" data-cycle="2,2">2/2</button>
+                            <button type="button" class="chip" data-cycle="3,3">3/3</button>
+                            <button type="button" class="chip" data-cycle="1,3">Сутки/трое</button>
+                            <button type="button" class="chip" data-cycle="1,2">1/2</button>
+                            <button type="button" class="chip" data-cycle="4,2">4/2</button>
+                        </div>
+                    </div>
+                    <div class="form-grid-3">
+                        <div class="form-group">
+                            <label class="control-label" for="sCycleWork">Рабочих дней</label>
+                            <input type="number" id="sCycleWork" class="styled-text-input" min="1" max="30" value="2">
+                        </div>
+                        <div class="form-group">
+                            <label class="control-label" for="sCycleOff">Выходных</label>
+                            <input type="number" id="sCycleOff" class="styled-text-input" min="0" max="30" value="2">
+                        </div>
+                        <div class="form-group">
+                            <label class="control-label" for="sCycleStart">Первый рабочий день</label>
+                            <input type="date" id="sCycleStart" class="styled-date-input">
+                        </div>
+                    </div>
+                    <div class="cycle-preview" id="sCyclePreview"></div>
+                </div>
+
+                <div class="form-group">
+                    <label class="control-label">Смена</label>
+                    <div class="form-grid-3">
+                        <div class="form-group">
+                            <span class="field-label-sm">Начало</span>
+                            <input type="time" id="sStart" class="styled-date-input">
+                        </div>
+                        <div class="form-group">
+                            <span class="field-label-sm">Конец</span>
+                            <input type="time" id="sEnd" class="styled-date-input">
+                        </div>
+                        <div class="form-group">
+                            <span class="field-label-sm">Перерыв, мин</span>
+                            <input type="number" id="sBreak" class="styled-text-input" min="0" max="600" step="5" placeholder="0">
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="control-label" for="sDuration">Длительность смены, ч</label>
+                    <input type="number" id="sDuration" class="styled-text-input" min="0.25" max="24" step="0.25" placeholder="Считается из времени смены">
+                    <span class="field-hint">Заполните, если важна только длительность. Время начала нужно для учёта опозданий.</span>
+                </div>
+                <div class="norm-hint" id="sNormHint"></div>
+
+                <div class="form-group">
+                    <label class="control-label" for="sNote">Комментарий</label>
+                    <input type="text" id="sNote" class="styled-text-input" placeholder="Необязательно">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" data-close>Отмена</button>
+                    <button type="submit" class="btn btn-primary">Сохранить график</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Отсутствие -->
+    <div class="modal" id="absenceModal">
+        <div class="modal-content">
+            <h2 class="card-title-small" id="absenceModalTitle">Отсутствие</h2>
+            <form id="absenceForm" class="form-layout">
+                <div class="form-group">
+                    <label class="control-label">Тип</label>
+                    <div class="seg seg-full" id="aKind">
+                        <button type="button" class="seg-btn active" data-value="vacation">Отпуск</button>
+                        <button type="button" class="seg-btn" data-value="sick">Больничный</button>
+                        <button type="button" class="seg-btn" data-value="dayoff">Отгул</button>
+                    </div>
+                </div>
+                <div class="form-grid-2">
+                    <div class="form-group">
+                        <label class="control-label" for="aFrom">С</label>
+                        <input type="date" id="aFrom" class="styled-date-input" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="control-label" for="aTo">По</label>
+                        <input type="date" id="aTo" class="styled-date-input" required>
+                    </div>
+                </div>
+                <div class="norm-hint" id="aDaysHint"></div>
+                <label class="filter-item">
+                    <input type="checkbox" id="aPaid"> Оплачиваемое
+                </label>
+                <span class="field-hint">Оплачиваемые дни начисляются по ставке (за смену — ставка за день, за час — норма смены × ставка). Выходные по графику не оплачиваются.</span>
+                <div class="form-group">
+                    <label class="control-label" for="aNote">Комментарий</label>
+                    <input type="text" id="aNote" class="styled-text-input" placeholder="Необязательно">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" data-close>Отмена</button>
+                    <button type="submit" class="btn btn-primary">Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Объединение -->
+    <div class="modal" id="mergeModal">
+        <div class="modal-content">
+            <h2 class="card-title-small">Объединить с дублем</h2>
+            <p class="confirm-text">
+                Выберите карточку-дубль. Её смены, графики и отсутствия перейдут сюда, ФИО станет
+                ещё одним написанием этого сотрудника, а сама карточка удалится. При совпадении дат
+                остаётся смена с большей наработкой. Действие необратимо.
+            </p>
+            <input type="search" id="mergeSearch" class="styled-text-input merge-search" placeholder="Поиск сотрудника…">
+            <div class="merge-list" id="mergeList"></div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" data-close>Отмена</button>
+                <button type="button" class="btn btn-danger" id="mergeConfirmBtn" disabled>Объединить</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/components.js?v=1.8.0"></script>
+    <script src="/static/hub-ui.js?v=1.8.0"></script>
+    <script src="/static/employee.js?v=1.8.0"></script>
+</body>
+</html>

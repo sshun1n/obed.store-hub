@@ -22,9 +22,11 @@
 
     function renderSidebar(currentUser) {
         const path = window.location.pathname;
-        const isActive = (p) => (p === '/' ? (path === '/' || path === '/static/' || path.endsWith('/index.html')) : path.startsWith(p) || path.endsWith(p + '.html'));
-        const link = (href, num, label) =>
-            `<a href="${href}" class="side-link${isActive(href) ? ' active' : ''}"><span class="side-num">${num}</span>${label}</a>`;
+        const isActive = (p) => (p === '/' ? (path === '/' || path === '/static/' || path.endsWith('/index.html')) : path === p || path.endsWith(p + '.html'));
+        // extra — страницы, при которых пункт тоже подсвечен (карточка сотрудника → «Сотрудники»)
+        const link = (href, num, label, extra = []) =>
+            `<a href="${href}" class="side-link${[href, ...extra].some(isActive) ? ' active' : ''}"><span class="side-num">${num}</span>${label}</a>`;
+        const isAdmin = currentUser && currentUser.role === 'admin';
 
         const roleLabel = currentUser
             ? (currentUser.role === 'admin' ? 'администратор' : 'менеджер')
@@ -46,9 +48,10 @@
                 ${link('/nomenclature', '01', 'Номенклатура')}
                 ${link('/orders', '02', 'Заказы по точкам')}
                 ${link('/management', '03', 'Управление')}
-                ${currentUser && currentUser.role === 'admin' ? link('/timesheet', '04', 'Учёт времени') : ''}
-                ${currentUser && currentUser.role === 'admin'
-                    ? `<div class="side-caption">Система</div>${link('/admin', '05', 'Админ-панель')}`
+                ${isAdmin ? link('/timesheet', '04', 'Учёт времени') : ''}
+                ${isAdmin ? link('/employees', '05', 'Сотрудники', ['/employee']) : ''}
+                ${isAdmin
+                    ? `<div class="side-caption">Система</div>${link('/admin', '06', 'Админ-панель')}`
                     : ''}
             </nav>
             <div class="side-user">

@@ -1,5 +1,6 @@
 /**
- * Учёт рабочего времени: загрузка табеля, отчёт по зарплате, настройки сотрудников.
+ * Учёт рабочего времени: загрузка табеля и отчёт по зарплате.
+ * Настройки сотрудника — на его карточке (/employee?id=…).
  */
 document.addEventListener('DOMContentLoaded', () => {
     const el = (id) => document.getElementById(id);
@@ -8,11 +9,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const showArchived = el('showArchived');
     const reportBody = el('reportBody');
     const uploadStatus = el('uploadStatus');
-    const modal = el('employeeModal');
 
     let currentReport = null;
     let lastImport = null;
-    let editingEmployee = null;
     let expandedRowId = null;
 
     // --- Форматирование ---
@@ -108,7 +107,7 @@ document.addEventListener('DOMContentLoaded', () => {
         el('statHours').textContent = totalMin
             ? `${new Intl.NumberFormat('ru-RU').format(h)} ч ${m} мин`
             : '0 ч';
-        el('statBase').textContent = fmtMoney(sum((r) => r.base_pay));
+        el('statBase').textContent = fmtMoney(sum((r) => r.base_pay + r.absence_pay));
         el('statPenalty').textContent = fmtMoney(sum((r) => r.underwork_penalty + r.late_penalty_total));
         el('statTotal').textContent = fmtMoney(sum((r) => r.total_pay));
     }
@@ -129,23 +128,32 @@ document.addEventListener('DOMContentLoaded', () => {
             if (row.late_count) violations.push(`опозд. ×${row.late_count}`);
             if (row.early_count) violations.push(`ран. уход ×${row.early_count}`);
             if (row.absences) violations.push(`<span class="ts-warn">прогул ×${row.absences}</span>`);
+            if (row.punch_issues) violations.push(`<span class="punch-warn" title="Дни без отметки прихода или ухода: система учёта досчитала время сама. Проверьте наработку.">неполн. отметки ×${row.punch_issues}</span>`);
+            const excused = [];
+            if (row.vacation_days) excused.push(`отпуск ×${row.vacation_days}`);
+            if (row.sick_days) excused.push(`больн. ×${row.sick_days}`);
+            if (row.dayoff_days) excused.push(`отгул ×${row.dayoff_days}`);
+            if (row.extra_days) excused.push(`вне графика ×${row.extra_days}`);
+            const accrued = row.base_pay + row.absence_pay;
             const penalty = row.underwork_penalty + row.late_penalty_total;
+            const sub = [e.position || e.department, row.has_schedule ? null : 'график из табеля']
+                .filter(Boolean).map(esc).join(' · ');
             return `
             <tr class="ts-row${e.is_active ? '' : ' ts-archived'}" data-emp="${e.id}">
                 <td>
-                    <div class="ts-name">${esc(e.full_name)}</div>
-                    <div class="ts-position">${esc(e.position || e.department || '')}</div>
+                    <div class="ts-name">${esc(e.display_name || e.full_name)}</div>
+                    <div class="ts-position">${sub}</div>
                 </td>
                 <td class="ts-num">${row.days_worked || '—'}</td>
                 <td class="ts-num">${row.worked_minutes ? fmtHours(row.worked_minutes) : '—'}</td>
                 <td class="ts-num">${row.shortfall_minutes ? `<span class="ts-warn">−${fmtHours(row.shortfall_minutes)}</span>` : '—'}</td>
-                <td class="ts-viol">${violations.join('<br>') || '—'}</td>
+                <td class="ts-viol">${[...violations, ...excused.map((x) => `<span class="text-muted">${x}</span>`)].join('<br>') || '—'}</td>
                 <td class="ts-num">${rateLabel}</td>
-                <td class="ts-num">${row.base_pay ? fmtMoney(row.base_pay) : '—'}</td>
+                <td class="ts-num"${row.absence_pay ? ` title="В т.ч. оплата отсутствий: ${fmtMoney(row.absence_pay)}"` : ''}>${accrued ? fmtMoney(accrued) : '—'}</td>
                 <td class="ts-num">${penalty ? `<span class="ts-warn">−${fmtMoney(penalty)}</span>` : '—'}</td>
-                <td class="ts-num ts-total">${row.base_pay || penalty ? fmtMoney(row.total_pay) : '—'}</td>
+                <td class="ts-num ts-total">${accrued || penalty ? fmtMoney(row.total_pay) : '—'}</td>
                 <td class="ts-actions">
-                    <button class="action-btn btn-edit-user" data-edit="${e.id}" title="Настройки">настр.</button>
+                    <a class="action-btn btn-edit-user" href="/employee?id=${e.id}" title="Карточка сотрудника">настр.</a>
                 </td>
             </tr>`;
         }).join('');
@@ -168,37 +176,46 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             const params = new URLSearchParams({ start: periodStart.value, end: periodEnd.value });
-            const r = await fetch(`/api/v1/timesheet/employees/${empId}/sessions?${params}`);
-            if (!r.ok) throw new Error('Не удалось загрузить детализацию');
-            const sessions = await r.json();
-            if (!sessions.length) {
+            const days = (await Hub.api(`/api/v1/timesheet/employees/${empId}/days?${params}`))
+                .filter((d) => d.status !== 'none');
+            if (!days.length) {
                 detailTr.querySelector('td').innerHTML = '<span class="text-muted">Нет записей за период.</span>';
                 return;
             }
-            const emp = currentReport.rows.find((x) => x.employee.id === empId)?.employee;
-            const rows = sessions.map((s) => {
-                const norm = emp?.norm_minutes || s.schedule_minutes;
-                const absence = !s.worked_minutes && norm;
-                const shortfall = s.worked_minutes && norm && norm > s.worked_minutes ? norm - s.worked_minutes : 0;
-                const viol = [s.late_raw ? `опоздание ${esc(s.late_raw)}` : '', s.early_raw ? `ранний уход ${esc(s.early_raw)}` : ''].filter(Boolean).join(', ');
+            const rows = days.map((d) => {
+                const wd = Hub.WEEKDAYS[(Hub.parseIso(d.work_date).getDay() + 6) % 7];
+                const plan = d.planned_start || d.planned_end
+                    ? `${d.planned_start || '?'}–${d.planned_end || '?'}`
+                    : (d.norm_minutes ? fmtHours(d.norm_minutes) : '');
+                const viol = [];
+                if (d.late_minutes) viol.push(`опоздание ${d.late_minutes} мин${d.late_counted ? '' : ' (допуск)'}`);
+                if (d.early_minutes) viol.push(`ранний уход ${d.early_minutes} мин`);
+                if (d.absence_note) viol.push(esc(d.absence_note));
+                if (d.punch_issue) viol.unshift(`<span class="punch-warn">${Hub.PUNCH[d.punch_issue]}</span>`);
+                const muted = d.status === 'off' || d.status === 'planned';
                 return `
-                <tr${absence ? ' class="ts-absence"' : ''}>
-                    <td>${fmtDate(s.work_date)}</td>
-                    <td>${s.check_in || '—'}</td>
-                    <td>${s.check_out || '—'}</td>
-                    <td>${s.worked_minutes ? fmtHours(s.worked_minutes) : (absence ? 'прогул' : '—')}</td>
-                    <td>${norm ? fmtHours(norm) : '—'}</td>
-                    <td>${shortfall ? `−${fmtHours(shortfall)}` : '—'}</td>
-                    <td>${viol || '—'}</td>
+                <tr class="${d.status === 'absent' ? 'ts-absence' : ''}${muted ? ' ts-muted-row' : ''}${d.punch_issue ? ' ts-punch-row' : ''}">
+                    <td>${fmtDate(d.work_date)} <span class="ts-wd">${wd}</span></td>
+                    <td><span class="day-status st-${d.status}">${Hub.STATUS[d.status]}</span></td>
+                    <td>${plan || '—'}</td>
+                    <td>${d.check_in || '—'}</td>
+                    <td>${d.check_out || '—'}</td>
+                    <td>${d.worked_minutes ? fmtHours(d.worked_minutes) : '—'}</td>
+                    <td>${d.shortfall_minutes ? `−${fmtHours(d.shortfall_minutes)}` : '—'}</td>
+                    <td>${viol.join(', ') || '—'}</td>
                 </tr>`;
             }).join('');
+            const source = days.some((d) => d.source === 'schedule')
+                ? 'Норма и выходные — по графику из карточки сотрудника'
+                : 'Своего графика нет — норма из табеля';
             detailTr.querySelector('td').innerHTML = `
                 <div class="ts-detail-inner">
                     <table class="ts-detail-table">
-                        <thead><tr><th>Дата</th><th>Приход</th><th>Уход</th><th>Наработка</th><th>Норма</th><th>Недоработка</th><th>Нарушения</th></tr></thead>
+                        <thead><tr><th>Дата</th><th>Статус</th><th>План</th><th>Приход</th><th>Уход</th><th>Наработка</th><th>Недоработка</th><th>Нарушения</th></tr></thead>
                         <tbody>${rows}</tbody>
                     </table>
-                </div>`;
+                </div>
+                <div class="ts-detail-foot">${source} · <a href="/employee?id=${empId}">открыть карточку →</a></div>`;
         } catch (e) {
             detailTr.querySelector('td').innerHTML = `<span class="ts-warn">${esc(e.message)}</span>`;
         }
@@ -239,73 +256,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- Модальное окно настроек ---
-
-    function openModal(emp) {
-        editingEmployee = emp;
-        el('modalTitle').textContent = emp.full_name;
-        el('fPayType').value = emp.pay_type || 'shift';
-        el('fPayRate').value = emp.pay_rate || '';
-        el('fNormHours').value = emp.norm_minutes ? (emp.norm_minutes / 60) : '';
-        el('fTolerance').value = emp.underwork_tolerance_min || '';
-        el('fUnderworkPenalty').value = emp.underwork_penalty_per_hour || '';
-        el('fLatePenalty').value = emp.late_penalty || '';
-        el('fPosition').value = emp.position || '';
-        el('fIsActive').checked = emp.is_active;
-        updateRateLabel();
-        modal.classList.add('open');
-    }
-
-    function closeModal() {
-        modal.classList.remove('open');
-        editingEmployee = null;
-    }
-
-    function updateRateLabel() {
-        el('fPayRateLabel').textContent = el('fPayType').value === 'hour' ? 'Ставка, ₽/час' : 'Ставка, ₽/смена';
-    }
-
-    async function saveEmployee(ev) {
-        ev.preventDefault();
-        if (!editingEmployee) return;
-        const normHours = parseFloat(el('fNormHours').value);
-        const payload = {
-            pay_type: el('fPayType').value,
-            pay_rate: parseFloat(el('fPayRate').value) || 0,
-            norm_minutes: isNaN(normHours) || normHours <= 0 ? null : Math.round(normHours * 60),
-            underwork_tolerance_min: parseInt(el('fTolerance').value) || 0,
-            underwork_penalty_per_hour: parseFloat(el('fUnderworkPenalty').value) || 0,
-            late_penalty: parseFloat(el('fLatePenalty').value) || 0,
-            position: el('fPosition').value.trim() || null,
-            is_active: el('fIsActive').checked,
-        };
-        try {
-            const r = await fetch(`/api/v1/timesheet/employees/${editingEmployee.id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
-            if (!r.ok) throw new Error((await r.json()).detail || 'Не удалось сохранить');
-            closeModal();
-            await loadReport();
-        } catch (e) {
-            alert(e.message);
-        }
-    }
-
-    async function deleteEmployee() {
-        if (!editingEmployee) return;
-        if (!confirm(`Удалить сотрудника «${editingEmployee.full_name}» вместе со всей историей смен?\nЕсли нужно просто скрыть — снимите галочку «Активный сотрудник».`)) return;
-        try {
-            const r = await fetch(`/api/v1/timesheet/employees/${editingEmployee.id}`, { method: 'DELETE' });
-            if (!r.ok) throw new Error('Не удалось удалить');
-            closeModal();
-            await loadReport();
-        } catch (e) {
-            alert(e.message);
-        }
-    }
-
     // --- События ---
 
     el('uploadBtn').addEventListener('click', () => el('fileInput').click());
@@ -324,20 +274,9 @@ document.addEventListener('DOMContentLoaded', () => {
     periodStart.addEventListener('change', loadReport);
     periodEnd.addEventListener('change', loadReport);
     showArchived.addEventListener('change', loadReport);
-    el('fPayType').addEventListener('change', updateRateLabel);
-    el('employeeForm').addEventListener('submit', saveEmployee);
-    el('cancelModalBtn').addEventListener('click', closeModal);
-    el('deleteEmployeeBtn').addEventListener('click', deleteEmployee);
-    modal.addEventListener('click', (ev) => { if (ev.target === modal) closeModal(); });
 
     reportBody.addEventListener('click', (ev) => {
-        const editBtn = ev.target.closest('[data-edit]');
-        if (editBtn) {
-            const id = parseInt(editBtn.dataset.edit);
-            const row = currentReport.rows.find((x) => x.employee.id === id);
-            if (row) openModal(row.employee);
-            return;
-        }
+        if (ev.target.closest('a')) return;
         const tr = ev.target.closest('tr.ts-row');
         if (tr) toggleDetail(tr, parseInt(tr.dataset.emp));
     });

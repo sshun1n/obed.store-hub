@@ -271,6 +271,7 @@ class PayrollDay(BaseModel):
     early_minutes: int = 0
     late_counted: bool = False
     planned_work: Optional[bool] = None
+    punch_issue: Optional[str] = None    # no_exit | no_entry | no_marks
     absence_paid: bool = False
     absence_note: Optional[str] = None
 
@@ -289,6 +290,7 @@ class PayrollRow(BaseModel):
     shortfall_minutes: int = 0
     late_count: int = 0
     early_count: int = 0
+    punch_issues: int = 0            # Дни с неполными отметками прихода/ухода
     base_pay: float = 0.0
     absence_pay: float = 0.0         # Оплата отпусков/больничных с признаком "оплачиваемый"
     underwork_penalty: float = 0.0

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Сотрудники | OBED.STORE Hub</title>
+    <link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css?v=1.8.0">
+</head>
+<body>
+    <div class="container">
+        <header class="page-header">
+            <span class="eyebrow">Сервис 05</span>
+            <h1>Сотрудники</h1>
+            <p class="subtitle">Справочник пополняется автоматически из загруженных табелей. Здесь задаются имена, оплата, графики работы и отсутствия.</p>
+        </header>
+
+        <div id="accessDenied" class="alert-danger" style="display:none; cursor:default;">
+            Раздел доступен только администраторам.
+        </div>
+
+        <div id="pageContent" style="display:none;">
+            <div class="controls-panel">
+                <div class="input-group">
+                    <input type="search" id="searchInput" class="styled-text-input" placeholder="Поиск по имени, должности, отделу…">
+                    <div class="seg" id="statusFilter">
+                        <button class="seg-btn active" data-status="active">Активные</button>
+                        <button class="seg-btn" data-status="archived">Архив</button>
+                        <button class="seg-btn" data-status="all">Все</button>
+                    </div>
+                    <span class="status-text text-muted" id="countText"></span>
+                </div>
+                <button class="btn btn-primary" id="addBtn">Добавить сотрудника</button>
+            </div>
+
+            <div class="table-wrapper data-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Сотрудник</th>
+                            <th>Отдел · должность</th>
+                            <th>График сегодня</th>
+                            <th>Оплата</th>
+                            <th>Последняя смена</th>
+                            <th>Статус</th>
+                        </tr>
+                    </thead>
+                    <tbody id="listBody">
+                        <tr><td colspan="6" class="empty-state">Загрузка…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="addModal">
+        <div class="modal-content">
+            <h2 class="card-title-small">Новый сотрудник</h2>
+            <form id="addForm" class="form-layout">
+                <div class="form-group">
+                    <label class="control-label" for="aFullName">ФИО как в табеле</label>
+                    <input type="text" id="aFullName" class="styled-text-input" required placeholder="Иванов Иван Иванович">
+                    <span class="field-hint">По этому ФИО строки будущих табелей будут привязываться к сотруднику.</span>
+                </div>
+                <div class="form-group">
+                    <label class="control-label" for="aDisplayName">Отображаемое имя</label>
+                    <input type="text" id="aDisplayName" class="styled-text-input" placeholder="Необязательно, например «Иван (кондитер)»">
+                </div>
+                <div class="form-grid-2">
+                    <div class="form-group">
+                        <label class="control-label" for="aDepartment">Отдел</label>
+                        <input type="text" id="aDepartment" class="styled-text-input">
+                    </div>
+                    <div class="form-group">
+                        <label class="control-label" for="aPosition">Должность</label>
+                        <input type="text" id="aPosition" class="styled-text-input">
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" data-close>Отмена</button>
+                    <button type="submit" class="btn btn-primary">Создать и открыть</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="/static/components.js?v=1.8.0"></script>
+    <script src="/static/hub-ui.js?v=1.8.0"></script>
+    <script src="/static/employees.js?v=1.8.0"></script>
+</body>
+</html>
