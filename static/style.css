@@ -1073,12 +1073,18 @@ a.action-btn { text-decoration: none; }
 .back-link:hover { color: var(--red); }
 
 textarea.styled-text-input { resize: vertical; min-height: 64px; line-height: 1.45; }
-input[type="time"].styled-date-input, input[type="date"].styled-date-input { width: 100%; }
+.form-layout .styled-date-input { width: 100%; min-width: 0; }
 
 .field-hint { font-size: 0.74rem; color: var(--muted); line-height: 1.4; }
 .field-label-sm { font-size: 0.72rem; color: var(--muted); }
-.form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: end; }
-.form-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; align-items: end; }
+.form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+.form-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; align-items: start; }
+.form-subhead-sm {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--ink);
+    margin-bottom: -6px;
+}
 .form-grid-2 .styled-text-input, .form-grid-3 .styled-text-input,
 .form-layout .styled-text-input { min-width: 0; width: 100%; }
 .form-footer { display: flex; justify-content: flex-end; padding-top: 4px; }

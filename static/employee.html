@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=1.8.0">
+    <link rel="stylesheet" href="/static/style.css?v=1.8.1">
 </head>
 <body>
     <div class="container">
@@ -109,21 +109,25 @@
                                 <input type="number" id="fNormHours" class="styled-text-input" min="0" max="24" step="0.25" placeholder="Не задана">
                                 <span class="field-hint">Используется, когда в графике не указана длительность смены. Если своего графика нет — заменяет норму из табеля.</span>
                             </div>
+                            <div class="form-subhead-sm">Недоработка</div>
                             <div class="form-grid-2">
                                 <div class="form-group">
-                                    <label class="control-label" for="fUnderPenalty">Штраф за недоработку, ₽/ч</label>
+                                    <label class="control-label" for="fUnderPenalty">Штраф, ₽ за час</label>
                                     <input type="number" id="fUnderPenalty" class="styled-text-input" min="0" step="0.01" placeholder="0">
                                 </div>
                                 <div class="form-group">
-                                    <label class="control-label" for="fUnderTol">Допуск недоработки, мин</label>
+                                    <label class="control-label" for="fUnderTol">Без штрафа до, мин</label>
                                     <input type="number" id="fUnderTol" class="styled-text-input" min="0" step="5" placeholder="0">
                                 </div>
+                            </div>
+                            <div class="form-subhead-sm">Опоздание</div>
+                            <div class="form-grid-2">
                                 <div class="form-group">
-                                    <label class="control-label" for="fLatePenalty">Штраф за опоздание, ₽</label>
+                                    <label class="control-label" for="fLatePenalty">Штраф, ₽ за раз</label>
                                     <input type="number" id="fLatePenalty" class="styled-text-input" min="0" step="0.01" placeholder="0">
                                 </div>
                                 <div class="form-group">
-                                    <label class="control-label" for="fLateTol">Допуск опоздания, мин</label>
+                                    <label class="control-label" for="fLateTol">Без штрафа до, мин</label>
                                     <input type="number" id="fLateTol" class="styled-text-input" min="0" step="1" placeholder="0">
                                 </div>
                             </div>
@@ -337,8 +341,8 @@
         </div>
     </div>
 
-    <script src="/static/components.js?v=1.8.0"></script>
-    <script src="/static/hub-ui.js?v=1.8.0"></script>
-    <script src="/static/employee.js?v=1.8.0"></script>
+    <script src="/static/components.js?v=1.8.1"></script>
+    <script src="/static/hub-ui.js?v=1.8.1"></script>
+    <script src="/static/employee.js?v=1.8.1"></script>
 </body>
 </html>
