@@ -47,26 +47,23 @@ document.addEventListener('DOMContentLoaded', () => {
         renderProductList();
     }
 
-    // Обновление из таблицы не должно мешать показать справочник: у менеджера нет
-    // права на синхронизацию, а Google может быть недоступен
-    async function syncAndFetchProducts() {
-        productStatusMsg.innerText = 'Синхронизация…';
-        let syncError = false;
+    // Справочник показываем сразу из базы, таблицу сверяем в фоне: Google отвечает
+    // секундами. Список обновляется, только если в таблице появились новые товары.
+    // Синхронизировать может только админ
+    async function syncProductsInBackground() {
         try {
             const nomData = await api('/api/nomenclature');
             const names = nomData.data.map(item => item.full_name);
-            if (isAdmin) await api('/api/v1/products/sync', { method: 'POST', body: names });
+            const { added_count: added } = await api('/api/v1/products/sync', { method: 'POST', body: names });
+            productStatusMsg.innerText = '';
+            productStatusMsg.classList.remove('ts-warn');
+            if (added > 0) {
+                await loadProducts();
+                toast(`Из таблицы добавлено новых товаров: ${added}`);
+            }
         } catch (error) {
             console.error('Ошибка синхронизации продуктов:', error);
-            syncError = true;
-        }
-        try {
-            await loadProducts();
-            productStatusMsg.innerText = syncError ? 'Таблица недоступна, показан сохранённый справочник' : '';
-            productStatusMsg.classList.toggle('ts-warn', syncError);
-        } catch (error) {
-            console.error('Ошибка загрузки справочника:', error);
-            productStatusMsg.innerText = 'Ошибка загрузки справочника';
+            productStatusMsg.innerText = 'Таблица недоступна, новые товары не подтянуты';
             productStatusMsg.classList.add('ts-warn');
         }
     }
@@ -547,15 +544,22 @@ document.addEventListener('DOMContentLoaded', () => {
             productCategoryFilter.value = 'none';
         }
 
+        // Список не ждёт ни роль, ни таблицу
+        loadProducts().catch((err) => {
+            console.error('Ошибка загрузки справочника:', err);
+            productListContainer.innerHTML = '<p class="ts-warn product-list-empty">Не удалось загрузить справочник</p>';
+        });
+        fetchAndRenderCategories();
+
         try {
             const user = await api('/api/v1/users/me');
             isAdmin = user.role === 'admin';
         } catch (err) {
             console.error('Не удалось определить роль:', err);
         }
-
-        fetchAndRenderCategories();
-        syncAndFetchProducts();
+        // Роль стала известна: если карточку уже открыли, показываем кнопку правки
+        if (cardProduct && !cardEditing) renderCard();
+        if (isAdmin) syncProductsInBackground();
     }
 
     init();

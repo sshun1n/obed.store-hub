@@ -682,8 +682,10 @@ thead th:nth-child(2), tbody td:nth-child(2) { width: 22%; text-align: center; }
 .section-title { font-size: 1.4rem; }
 
 .product-filters { margin-bottom: 16px; }
+.product-filters input[type="search"] { width: 280px; }
 
 .product-list-container {
+    min-height: 360px;
     max-height: max(360px, calc(100vh - 300px));
     overflow-y: auto;
     border: 1px solid var(--line);
