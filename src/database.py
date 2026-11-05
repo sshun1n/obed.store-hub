@@ -105,6 +105,7 @@ class SyncSettings(Base):
     interval_minutes = Column(Integer, default=30, nullable=False)
     start_time = Column(String, default="08:00", nullable=False)
     end_time = Column(String, default="17:00", nullable=False)
+    weekdays = Column(String, default="0,1,2,3,4,5,6")  # 0 — понедельник, как в work_schedules
 
 # --- МОДЕЛИ УЧЁТА РАБОЧЕГО ВРЕМЕНИ ---
 

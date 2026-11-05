@@ -46,6 +46,14 @@ class SyncSettingsUpdate(BaseModel):
     interval_minutes: int = Field(ge=5, le=720)
     start_time: str = Field(pattern=r'^([01]\d|2[0-3]):[0-5]\d$')
     end_time: str = Field(pattern=r'^([01]\d|2[0-3]):[0-5]\d$')
+    weekdays: List[int] = Field(min_length=1)
+
+    @field_validator('weekdays')
+    @classmethod
+    def check_weekdays(cls, value: List[int]) -> List[int]:
+        if any(day < 0 or day > 6 for day in value):
+            raise ValueError('День недели должен быть от 0 до 6')
+        return sorted(set(value))
 
 # --- СХЕМЫ ПОЛЬЗОВАТЕЛЕЙ ---
 

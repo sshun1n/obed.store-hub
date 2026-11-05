@@ -20,7 +20,7 @@
 
     function autoHint(auto) {
         if (!auto.enabled) return 'Автосинхронизация выключена';
-        return `Автосинхронизация: каждые ${auto.interval_minutes} мин, ${auto.start_time}–${auto.end_time}`;
+        return `Автосинхронизация: ${auto.summary}`;
     }
 
     function mount(bar) {

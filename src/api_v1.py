@@ -200,6 +200,7 @@ def update_sync_settings(data: schemas.SyncSettingsUpdate, db: Session = Depends
     settings.interval_minutes = data.interval_minutes
     settings.start_time = data.start_time
     settings.end_time = data.end_time
+    settings.weekdays = ",".join(str(day) for day in data.weekdays)
     db.commit()
     return sheet_sync.get_status(db)
 

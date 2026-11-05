@@ -176,14 +176,46 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- 3. АВТОСИНХРОНИЗАЦИЯ ---
 
-    const syncForm = document.getElementById('syncSettingsForm');
     const syncEnabled = document.getElementById('syncEnabled');
+    const syncAutoState = document.getElementById('syncAutoState');
+    const syncAutoSummary = document.getElementById('syncAutoSummary');
+    const syncConfigureBtn = document.getElementById('syncConfigureBtn');
+    const syncModal = document.getElementById('syncSettingsModal');
+    const syncForm = document.getElementById('syncSettingsForm');
+    const syncDays = document.getElementById('syncDays');
     const syncInterval = document.getElementById('syncInterval');
     const syncStart = document.getElementById('syncStart');
     const syncEnd = document.getElementById('syncEnd');
+    const syncError = document.getElementById('syncSettingsError');
 
-    function showSyncSettings(auto) {
+    let syncAuto = null; // расписание, сохранённое на сервере
+
+    syncDays.innerHTML = Hub.WEEKDAYS.map((name, day) =>
+        `<button type="button" class="wd-btn${day >= 5 ? ' wd-wknd' : ''}" data-day="${day}" aria-pressed="false">${name}</button>`
+    ).join('');
+
+    function setSelectedDays(days) {
+        syncDays.querySelectorAll('.wd-btn').forEach((btn) => {
+            const on = days.includes(parseInt(btn.dataset.day, 10));
+            btn.classList.toggle('on', on);
+            btn.setAttribute('aria-pressed', on);
+        });
+    }
+
+    function getSelectedDays() {
+        return [...syncDays.querySelectorAll('.wd-btn.on')].map(btn => parseInt(btn.dataset.day, 10));
+    }
+
+    function showSyncRow(auto) {
+        syncAuto = auto;
         syncEnabled.checked = auto.enabled;
+        syncAutoState.textContent = auto.enabled ? 'Включена' : 'Выключена';
+        syncAutoSummary.textContent = auto.summary;
+        syncAutoSummary.classList.toggle('sync-auto-off', !auto.enabled);
+    }
+
+    function fillSyncForm(auto) {
+        setSelectedDays(auto.weekdays);
         syncStart.value = auto.start_time;
         syncEnd.value = auto.end_time;
         // Значение могли задать не из этого списка
@@ -191,30 +223,92 @@ document.addEventListener('DOMContentLoaded', () => {
             syncInterval.add(new Option(`${auto.interval_minutes} минут`, auto.interval_minutes));
         }
         syncInterval.value = String(auto.interval_minutes);
+        syncError.textContent = '';
     }
 
-    syncForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
+    async function saveSyncSettings(auto) {
+        const status = await Hub.api('/api/v1/sync/settings', {
+            method: 'PUT',
+            body: {
+                enabled: auto.enabled,
+                interval_minutes: auto.interval_minutes,
+                start_time: auto.start_time,
+                end_time: auto.end_time,
+                weekdays: auto.weekdays,
+            },
+        });
+        showSyncRow(status.auto);
+    }
+
+    // Тумблер сохраняется сразу и не трогает остальные настройки
+    syncEnabled.addEventListener('change', async () => {
+        const enabled = syncEnabled.checked;
+        syncEnabled.disabled = true;
         try {
-            const status = await Hub.api('/api/v1/sync/settings', {
-                method: 'PUT',
-                body: {
-                    enabled: syncEnabled.checked,
-                    interval_minutes: parseInt(syncInterval.value, 10),
-                    start_time: syncStart.value,
-                    end_time: syncEnd.value,
-                },
-            });
-            showSyncSettings(status.auto);
-            Hub.toast('Расписание сохранено');
+            await saveSyncSettings({ ...syncAuto, enabled });
+            Hub.toast(enabled ? 'Автосинхронизация включена' : 'Автосинхронизация выключена');
         } catch (err) {
+            syncEnabled.checked = !enabled;
             Hub.toast(err.message, 'error');
+        } finally {
+            syncEnabled.disabled = false;
         }
     });
 
+    syncConfigureBtn.addEventListener('click', () => {
+        fillSyncForm(syncAuto);
+        Hub.openModal(syncModal);
+    });
+
+    document.getElementById('syncSettingsCancel').addEventListener('click', () => Hub.closeModal(syncModal));
+
+    syncDays.addEventListener('click', (e) => {
+        const btn = e.target.closest('.wd-btn');
+        if (!btn) return;
+        btn.classList.toggle('on');
+        btn.setAttribute('aria-pressed', btn.classList.contains('on'));
+    });
+
+    syncModal.querySelector('.sync-day-presets').addEventListener('click', (e) => {
+        const chip = e.target.closest('[data-days]');
+        if (chip) setSelectedDays(chip.dataset.days.split(',').map(Number));
+    });
+
+    syncForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const weekdays = getSelectedDays();
+        if (weekdays.length === 0) {
+            syncError.textContent = 'Выберите хотя бы один день';
+            return;
+        }
+        syncError.textContent = '';
+        try {
+            await saveSyncSettings({
+                enabled: syncAuto.enabled,
+                interval_minutes: parseInt(syncInterval.value, 10),
+                start_time: syncStart.value,
+                end_time: syncEnd.value,
+                weekdays,
+            });
+            Hub.closeModal(syncModal);
+            Hub.toast('Расписание сохранено');
+        } catch (err) {
+            syncError.textContent = err.message;
+        }
+    });
+
+    syncConfigureBtn.disabled = true;
+    syncEnabled.disabled = true;
     Hub.api('/api/v1/sync/status')
-        .then(status => showSyncSettings(status.auto))
-        .catch(err => console.error('Не удалось загрузить расписание:', err));
+        .then((status) => {
+            showSyncRow(status.auto);
+            syncConfigureBtn.disabled = false;
+            syncEnabled.disabled = false;
+        })
+        .catch((err) => {
+            console.error('Не удалось загрузить расписание:', err);
+            syncAutoSummary.textContent = 'Не удалось загрузить расписание';
+        });
 
     renderUsers();
     renderConfigs();

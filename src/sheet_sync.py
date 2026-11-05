@@ -25,6 +25,7 @@ GOOGLE_TIMEOUT_SECONDS = 60
 JOIN_WAIT_SECONDS = 180
 # Снимка ещё нет, а Google недоступен: не долбим его при каждой проверке
 FIRST_SYNC_RETRY = timedelta(minutes=5)
+WEEKDAY_NAMES = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 
 nomenclature = NomenclatureService()
 
@@ -83,11 +84,41 @@ def get_settings(db) -> database.SyncSettings:
     return settings
 
 
+def _weekdays(settings: database.SyncSettings) -> List[int]:
+    return [int(day) for day in (settings.weekdays or "0,1,2,3,4,5,6").split(",")]
+
+
+def _weekdays_text(days: List[int]) -> str:
+    """Подряд идущие дни схлопывает: Пн–Пт, Пн, Ср, Пт, каждый день."""
+    if len(days) == 7:
+        return "каждый день"
+    groups: List[List[int]] = []
+    for day in days:
+        if groups and groups[-1][-1] == day - 1:
+            groups[-1].append(day)
+        else:
+            groups.append([day])
+    parts = []
+    for group in groups:
+        if len(group) >= 3:
+            parts.append(f"{WEEKDAY_NAMES[group[0]]}–{WEEKDAY_NAMES[group[-1]]}")
+        else:
+            parts.extend(WEEKDAY_NAMES[day] for day in group)
+    return ", ".join(parts)
+
+
+def _interval_text(minutes: int) -> str:
+    if minutes % 60 == 0:
+        return "каждый час" if minutes == 60 else f"каждые {minutes // 60} ч"
+    return f"каждые {minutes} мин"
+
+
 def get_status(db) -> Dict[str, Any]:
     config = crud.get_active_google_config(db)
     snapshot = db.query(database.SheetSnapshot).first()
     settings = get_settings(db)
     matches = bool(config) and _snapshot_matches(snapshot, config)
+    weekdays = _weekdays(settings)
     return {
         "configured": bool(config),
         "synced_at": snapshot.synced_at.isoformat(timespec="seconds") if matches else None,
@@ -98,6 +129,9 @@ def get_status(db) -> Dict[str, Any]:
             "interval_minutes": settings.interval_minutes,
             "start_time": settings.start_time,
             "end_time": settings.end_time,
+            "weekdays": weekdays,
+            "summary": f"{_weekdays_text(weekdays)}, {_interval_text(settings.interval_minutes)}, "
+                       f"{settings.start_time}–{settings.end_time}",
         },
     }
 
@@ -151,7 +185,7 @@ def run_sync() -> int:
 
 def is_due(settings: database.SyncSettings, last_attempt: Optional[datetime], now: datetime) -> bool:
     """Наступил ли очередной срок: start, start + интервал, … включая end."""
-    if not settings.enabled:
+    if not settings.enabled or now.weekday() not in _weekdays(settings):
         return False
     start = datetime.combine(now.date(), time.fromisoformat(settings.start_time))
     end = datetime.combine(now.date(), time.fromisoformat(settings.end_time))
