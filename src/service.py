@@ -13,14 +13,28 @@ logger = logging.getLogger(__name__)
 
 # --- КЛАССЫ ИСКЛЮЧЕНИЙ ---
 
+# Вес в названии: 1/150, 100/150/5 или 150 гр
+WEIGHT_RE = re.compile(r'\d+(?:\s*/\s*\d+)+|\d+\s*гр\.?(?![а-яё])', re.IGNORECASE)
+# Первое число до этого значения — штуки (2/60), больше — граммы первой части (100/150)
+MAX_PIECES = 10
+
 def parse_dish_name(full_name: str) -> Tuple[str, str]:
     """Разделяет название блюда на основную часть и состав."""
-    # Поиск веса (1/100 или 150 гр)
-    match = re.search(r'(\d+\s*/\s*\d+)|(\d+\s*гр\.?)', full_name, re.IGNORECASE)
+    match = WEIGHT_RE.search(full_name)
     if match:
         end_pos = match.end()
         return full_name[:end_pos].strip(), full_name[end_pos:].strip()
     return full_name.strip(), ""
+
+def parse_weight(full_name: str) -> Optional[int]:
+    """Вес порции в граммах из названия: 2/60 → 120, 100/150/5 → 255, 150 гр → 150."""
+    match = WEIGHT_RE.search(full_name)
+    if not match:
+        return None
+    parts = [int(part) for part in re.findall(r'\d+', match.group())]
+    if len(parts) > 1 and parts[0] <= MAX_PIECES:
+        return parts[0] * parts[1] + sum(parts[2:])
+    return sum(parts)
 
 
 class ServiceError(Exception):

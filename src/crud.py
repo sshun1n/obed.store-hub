@@ -1,3 +1,4 @@
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from src import database, schemas
@@ -71,15 +72,27 @@ def get_product(db: Session, product_id: int) -> Optional[database.Product]:
 def get_product_by_barcode(db: Session, barcode: str) -> Optional[database.Product]:
     return db.query(database.Product).filter(database.Product.barcode == barcode).first()
 
-def update_product(db: Session, product_id: int, display_name: Optional[str], composition: Optional[str],
-                   barcode: Optional[str], category_ids: List[int]) -> Optional[database.Product]:
+def get_product_by_name(db: Session, name: str) -> Optional[database.Product]:
+    return db.query(database.Product).filter(
+        or_(database.Product.name_from_sheet == name, database.Product.display_name == name)
+    ).first()
+
+def update_product(db: Session, product_id: int, category_ids: List[int], **fields) -> Optional[database.Product]:
     db_product = get_product(db, product_id)
     if not db_product:
         return None
-    db_product.display_name = display_name
-    db_product.composition = composition
-    db_product.barcode = barcode
+    for key, value in fields.items():
+        setattr(db_product, key, value)
     db_product.categories = db.query(database.Category).filter(database.Category.id.in_(category_ids)).all()
+    db.commit()
+    db.refresh(db_product)
+    return db_product
+
+def create_product(db: Session, name: str, created_by: str, category_ids: List[int], **fields) -> database.Product:
+    # Название идёт и в ключ: появится в таблице точно такое же — это будет тот же товар
+    db_product = database.Product(name_from_sheet=name, display_name=name, source="manual", created_by=created_by, **fields)
+    db_product.categories = db.query(database.Category).filter(database.Category.id.in_(category_ids)).all()
+    db.add(db_product)
     db.commit()
     db.refresh(db_product)
     return db_product

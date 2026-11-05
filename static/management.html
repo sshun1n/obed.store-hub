@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=1.9.4">
+    <link rel="stylesheet" href="/static/style.css?v=1.9.9">
 </head>
 <body>
     <div class="container">
@@ -16,7 +16,7 @@
             <div>
                 <span class="eyebrow">Система</span>
                 <h1>Продукция</h1>
-                <p class="subtitle">Справочник товаров из Google Таблиц. Нажмите на товар, чтобы открыть карточку.</p>
+                <p class="subtitle">Товары из Google Таблиц и добавленные вручную. Нажмите на товар, чтобы открыть карточку.</p>
             </div>
             <div id="syncBar" class="sync-bar"></div>
         </header>
@@ -29,6 +29,7 @@
                         <option value="">Все категории</option>
                         <option value="none">Без категории</option>
                     </select>
+                    <button type="button" id="addProductBtn" class="btn btn-primary product-add" hidden>Добавить товар</button>
                 </div>
 
                 <div id="productList" class="product-list-container"></div>
@@ -78,6 +79,6 @@
     <script src="/static/components.js?v=1.9.0"></script>
     <script src="/static/hub-ui.js?v=1.9.0"></script>
     <script src="/static/sync.js?v=1.9.4"></script>
-    <script src="/static/management.js?v=1.9.3"></script>
+    <script src="/static/management.js?v=1.9.5"></script>
 </body>
 </html>

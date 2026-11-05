@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const productModal = document.getElementById('productModal');
     const productCard = document.getElementById('productCard');
+    const addProductBtn = document.getElementById('addProductBtn');
 
     // --- Состояние ---
     let allCategories = [];
@@ -25,6 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Открытая карточка: товар, режим и черновик правок
     let cardProduct = null;
     let cardEditing = false;
+    let cardIsNew = false;
     let draft = null;
 
     // --- 1. Запросы к API ---
@@ -118,7 +120,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function parseDishName(fullName) {
         let mainPart = fullName;
         let composition = "";
-        const match = fullName.match(/(\d+\s*\/\s*\d+)|(\d+\s*гр\.?)/i);
+        const match = fullName.match(/\d+(?:\s*\/\s*\d+)+|\d+\s*гр\.?(?![а-яё])/i);
         if (match) {
             const endIdx = match.index + match[0].length;
             mainPart = fullName.substring(0, endIdx).trim();
@@ -134,6 +136,42 @@ document.addEventListener('DOMContentLoaded', () => {
             name: product.display_name || parsed.mainPart,
             composition: product.composition || parsed.composition,
         };
+    }
+
+    // Вес из карточки, а если его нет — из названия
+    function productWeight(product) {
+        return product.weight_grams ?? product.weight_from_name ?? null;
+    }
+
+    function formatWeight(grams) {
+        return grams === null ? '' : `${grams} г`;
+    }
+
+    // Запятая допустима. Пустое поле — null, не число — NaN
+    function parseNumber(value) {
+        const text = String(value ?? '').trim().replace(',', '.');
+        if (!text) return null;
+        const number = Number(text);
+        return Number.isFinite(number) ? number : NaN;
+    }
+
+    function formatNumber(value, digits = 1) {
+        return String(Number(value.toFixed(digits))).replace('.', ',');
+    }
+
+    // Энергия на 100 г по ТР ТС 022/2011. Считаем, только когда известны все три значения
+    function calcEnergy(protein, fat, carbs) {
+        if (![protein, fat, carbs].every(v => typeof v === 'number' && Number.isFinite(v))) return null;
+        return {
+            kcal: 4 * protein + 9 * fat + 4 * carbs,
+            kj: 17 * protein + 37 * fat + 17 * carbs,
+        };
+    }
+
+    function formatDate(isoDate) {
+        if (!isoDate) return '';
+        // Сервер хранит время в UTC без указания пояса
+        return new Date(`${isoDate}Z`).toLocaleDateString('ru-RU', { timeZone: 'Europe/Moscow' });
     }
 
     function renderProductList() {
@@ -161,10 +199,17 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        productListContainer.innerHTML = filtered.map(product => `
+        productListContainer.innerHTML = `
+            <div class="product-list-head">
+                <span>Наименование</span>
+                <span>Штрих-код</span>
+                <span class="product-weight">Вес</span>
+            </div>
+        ` + filtered.map(product => `
             <div class="product-row" data-id="${product.id}" role="button" tabindex="0">
                 <span class="product-name">${esc(productLabel(product).name)}</span>
-                <span class="product-barcode">${esc(product.barcode || '')}</span>
+                <span class="product-barcode">${esc(product.barcode || '—')}</span>
+                <span class="product-weight">${formatWeight(productWeight(product)) || '—'}</span>
             </div>
         `).join('');
     }
@@ -213,10 +258,59 @@ document.addEventListener('DOMContentLoaded', () => {
             <button type="button" class="btn btn-secondary btn-sm pc-generate" data-act="generate">Сгенерировать</button>`;
     }
 
+    function renderOrigin(product) {
+        if (cardIsNew) return '';
+        const date = formatDate(product.created_at);
+        if (product.source === 'manual') {
+            const who = product.created_by ? `: ${esc(product.created_by)}` : '';
+            return `<p class="pc-origin">Добавлен вручную${who}${date ? `, ${date}` : ''}</p>`;
+        }
+        return `<p class="pc-origin"><span class="pc-origin-mark">Авто</span> Создан программой: найден в Google Таблице${date ? `, ${date}` : ''}</p>`;
+    }
+
+    function renderNutritionView(product) {
+        const { protein, fat, carbs } = product;
+        if (protein === null && fat === null && carbs === null) {
+            return '<p class="pc-text"><span class="text-muted">Не указано</span></p>';
+        }
+        const weight = productWeight(product);
+        const cell = (value, factor) => (value === null ? '—' : formatNumber(value * factor));
+        const row = (title, factor) => {
+            const energy = calcEnergy(protein, fat, carbs);
+            return `
+                <tr>
+                    <th scope="row">${title}</th>
+                    <td>${cell(protein, factor)}</td>
+                    <td>${cell(fat, factor)}</td>
+                    <td>${cell(carbs, factor)}</td>
+                    <td>${energy ? formatNumber(energy.kcal * factor, 0) : '—'}</td>
+                    <td>${energy ? formatNumber(energy.kj * factor, 0) : '—'}</td>
+                </tr>`;
+        };
+        return `
+            <div class="pc-nutrition-wrap">
+                <table class="pc-nutrition">
+                    <thead><tr><th></th><th>Белки, г</th><th>Жиры, г</th><th>Углев., г</th><th>ккал</th><th>кДж</th></tr></thead>
+                    <tbody>
+                        ${row('На 100 г', 1)}
+                        ${weight ? row(`На порцию, ${weight} г`, weight / 100) : ''}
+                    </tbody>
+                </table>
+            </div>`;
+    }
+
+    function energyText() {
+        const energy = calcEnergy(parseNumber(draft.protein), parseNumber(draft.fat), parseNumber(draft.carbs));
+        return energy
+            ? `На 100 г: ${formatNumber(energy.kcal, 0)} ккал, ${formatNumber(energy.kj, 0)} кДж`
+            : 'Заполните все три значения, и калорийность посчитается сама.';
+    }
+
     function renderCard() {
         const product = cardProduct;
         const label = productLabel(product);
         const parsed = parseDishName(product.name_from_sheet);
+        const fromSheet = product.source !== 'manual';
         const draftCategories = cardEditing
             ? allCategories.filter(c => draft.categoryIds.includes(c.id))
             : product.categories;
@@ -229,7 +323,21 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="form-group">
                 <label for="pcComposition" class="control-label">Состав</label>
                 <textarea id="pcComposition" class="styled-text-input" rows="6" placeholder="${esc(parsed.composition)}">${esc(draft.composition)}</textarea>
-                <span class="field-hint">Пустое поле вернёт значение из таблицы.</span>
+                ${fromSheet ? '<span class="field-hint">Пустое поле вернёт значение из таблицы.</span>' : ''}
+            </div>
+            <div class="form-group">
+                <label for="pcWeight" class="control-label">Вес порции, г</label>
+                <input type="text" id="pcWeight" class="styled-text-input pc-weight-input" inputmode="numeric" autocomplete="off" value="${esc(draft.weight)}" placeholder="${product.weight_from_name ?? ''}">
+                ${fromSheet ? '<span class="field-hint">Пустое поле вернёт вес из названия.</span>' : ''}
+            </div>
+            <div class="form-group">
+                <span class="control-label">КБЖУ на 100 г</span>
+                <div class="pc-nutrition-inputs">
+                    <label>Белки, г<input type="text" id="pcProtein" class="styled-text-input" inputmode="decimal" autocomplete="off" value="${esc(draft.protein)}"></label>
+                    <label>Жиры, г<input type="text" id="pcFat" class="styled-text-input" inputmode="decimal" autocomplete="off" value="${esc(draft.fat)}"></label>
+                    <label>Углеводы, г<input type="text" id="pcCarbs" class="styled-text-input" inputmode="decimal" autocomplete="off" value="${esc(draft.carbs)}"></label>
+                </div>
+                <span class="field-hint" id="pcEnergy" aria-live="polite">${energyText()}</span>
             </div>
             <div class="form-group">
                 <span class="control-label">Категории</span>
@@ -241,6 +349,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 <p class="pc-text">${label.composition ? esc(label.composition) : '<span class="text-muted">Не указан</span>'}</p>
             </div>
             <div class="pc-field">
+                <span class="control-label">Вес порции</span>
+                <p class="pc-text">${formatWeight(productWeight(product)) || '<span class="text-muted">Не указан</span>'}</p>
+            </div>
+            <div class="pc-field">
+                <span class="control-label">КБЖУ</span>
+                ${renderNutritionView(product)}
+            </div>
+            <div class="pc-field">
                 <span class="control-label">Категории</span>
                 <div class="pc-tags">${renderCategoryTags(draftCategories, false)}</div>
             </div>
@@ -250,7 +366,8 @@ document.addEventListener('DOMContentLoaded', () => {
             <header class="pc-head">
                 <div class="pc-title">
                     <span class="eyebrow">Карточка товара</span>
-                    <h2>${esc(label.name)}</h2>
+                    <h2>${cardIsNew ? 'Новый товар' : esc(label.name)}</h2>
+                    ${renderOrigin(product)}
                 </div>
                 <div class="pc-head-actions">
                     ${isAdmin && !cardEditing ? '<button type="button" class="btn btn-secondary btn-sm" data-act="edit">Редактировать</button>' : ''}
@@ -260,10 +377,11 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="pc-body">
                 <div class="pc-main">
                     ${mainHtml}
-                    <div class="pc-field pc-source">
-                        <span class="control-label">Название в таблице</span>
-                        <p>${esc(product.name_from_sheet)}</p>
-                    </div>
+                    ${fromSheet ? `
+                        <div class="pc-field pc-source">
+                            <span class="control-label">Название в таблице</span>
+                            <p>${esc(product.name_from_sheet)}</p>
+                        </div>` : ''}
                 </div>
                 <aside class="pc-side">
                     <h3 class="pc-side-title">Штрих-код</h3>
@@ -285,6 +403,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function openCard(productId) {
         cardProduct = allProducts.find(p => p.id === productId);
         if (!cardProduct) return;
+        cardIsNew = false;
         cardEditing = false;
         draft = null;
         renderCard();
@@ -293,15 +412,36 @@ document.addEventListener('DOMContentLoaded', () => {
         productCard.focus(); // клавиатура работает с окном, а не со списком под ним
     }
 
-    function startEdit() {
-        const product = cardProduct;
+    function openNewProduct() {
+        cardProduct = {
+            id: null, name_from_sheet: '', display_name: null, composition: null, barcode: null,
+            weight_grams: null, weight_from_name: null, protein: null, fat: null, carbs: null,
+            source: 'manual', categories: [],
+        };
+        cardIsNew = true;
+        openModal(productModal);
+        startEdit();
+        productCard.scrollTop = 0;
+    }
+
+    function draftFromProduct(product) {
         const label = productLabel(product);
-        draft = {
+        const weight = productWeight(product);
+        const asText = value => (value === null ? '' : String(value).replace('.', ','));
+        return {
             name: label.name,
             composition: label.composition,
             barcode: product.barcode || '',
+            weight: asText(weight),
+            protein: asText(product.protein),
+            fat: asText(product.fat),
+            carbs: asText(product.carbs),
             categoryIds: product.categories.map(c => c.id),
         };
+    }
+
+    function startEdit() {
+        draft = draftFromProduct(cardProduct);
         cardEditing = true;
         renderCard();
         document.getElementById('pcName').focus();
@@ -312,17 +452,18 @@ document.addEventListener('DOMContentLoaded', () => {
         draft.name = document.getElementById('pcName').value;
         draft.composition = document.getElementById('pcComposition').value;
         draft.barcode = document.getElementById('pcBarcode').value;
+        draft.weight = document.getElementById('pcWeight').value;
+        draft.protein = document.getElementById('pcProtein').value;
+        draft.fat = document.getElementById('pcFat').value;
+        draft.carbs = document.getElementById('pcCarbs').value;
     }
 
     function hasUnsavedChanges() {
         readDraftFields();
-        const product = cardProduct;
-        const label = productLabel(product);
-        const sameCategories = [...draft.categoryIds].sort().join() === product.categories.map(c => c.id).sort().join();
-        return draft.name.trim() !== label.name
-            || draft.composition.trim() !== label.composition
-            || draft.barcode.trim() !== (product.barcode || '')
-            || !sameCategories;
+        const saved = draftFromProduct(cardProduct);
+        const sameCategories = [...draft.categoryIds].sort().join() === [...saved.categoryIds].sort().join();
+        const textFields = ['name', 'composition', 'barcode', 'weight', 'protein', 'fat', 'carbs'];
+        return !sameCategories || textFields.some(field => draft[field].trim() !== saved[field]);
     }
 
     async function leaveEdit(thenClose) {
@@ -336,8 +477,31 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         cardEditing = false;
         draft = null;
+        // У нового товара нечего показывать без формы
+        if (cardIsNew) {
+            productModal.removeAttribute('data-keep-open');
+            closeModal(productModal);
+            cardProduct = null;
+            cardIsNew = false;
+            return;
+        }
         renderCard();
         if (thenClose) closeModal(productModal);
+    }
+
+    // Числовые поля черновика. Ошибка ввода — исключение с понятным текстом
+    function readDraftNumbers() {
+        const weight = parseNumber(draft.weight);
+        if (weight !== null && !(Number.isInteger(weight) && weight > 0)) {
+            throw new Error('Вес укажите целым числом граммов');
+        }
+        const protein = parseNumber(draft.protein);
+        const fat = parseNumber(draft.fat);
+        const carbs = parseNumber(draft.carbs);
+        if ([protein, fat, carbs].some(Number.isNaN)) {
+            throw new Error('Белки, жиры и углеводы укажите числами');
+        }
+        return { weight, protein, fat, carbs };
     }
 
     async function saveCard(saveBtn) {
@@ -349,24 +513,38 @@ document.addEventListener('DOMContentLoaded', () => {
         errorEl.textContent = '';
         saveBtn.disabled = true;
         try {
-            const updated = await api(`/api/v1/products/${cardProduct.id}`, {
-                method: 'PUT',
-                body: {
-                    // Совпадает с таблицей — правки нет, поле снова следует за таблицей
-                    display_name: name === parsed.mainPart ? null : name,
-                    composition: composition === parsed.composition ? null : composition,
-                    barcode: draft.barcode,
-                    category_ids: draft.categoryIds,
-                },
-            });
+            const { weight, protein, fat, carbs } = readDraftNumbers();
+            const common = {
+                barcode: draft.barcode,
+                protein, fat, carbs,
+                category_ids: draft.categoryIds,
+            };
+            const wasNew = cardIsNew;
+            const updated = wasNew
+                ? await api('/api/v1/products/', {
+                    method: 'POST',
+                    body: { ...common, name, composition, weight_grams: weight },
+                })
+                : await api(`/api/v1/products/${cardProduct.id}`, {
+                    method: 'PUT',
+                    body: {
+                        ...common,
+                        // Совпадает с таблицей — правки нет, поле снова следует за таблицей
+                        display_name: name === parsed.mainPart ? null : name,
+                        composition: composition === parsed.composition ? null : composition,
+                        weight_grams: weight === cardProduct.weight_from_name ? null : weight,
+                    },
+                });
             const idx = allProducts.findIndex(p => p.id === updated.id);
             if (idx !== -1) allProducts[idx] = updated;
+            else allProducts.push(updated);
             cardProduct = updated;
+            cardIsNew = false;
             cardEditing = false;
             draft = null;
             renderCard();
             renderProductList();
-            toast('Карточка сохранена');
+            toast(wasNew ? 'Товар добавлен' : 'Карточка сохранена');
         } catch (err) {
             errorEl.textContent = err.message;
             saveBtn.disabled = false;
@@ -495,6 +673,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Калорийность пересчитывается прямо при вводе
+    productCard.addEventListener('input', (e) => {
+        if (!['pcProtein', 'pcFat', 'pcCarbs'].includes(e.target.id)) return;
+        readDraftFields();
+        document.getElementById('pcEnergy').textContent = energyText();
+    });
+
+    addProductBtn.addEventListener('click', openNewProduct);
+
     categoryContextMenu.addEventListener('click', (e) => {
         const item = e.target.closest('.menu-item');
         if (!item) return;
@@ -534,6 +721,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const user = await api('/api/v1/users/me');
             isAdmin = user.role === 'admin';
+            addProductBtn.hidden = !isAdmin;
         } catch (err) {
             console.error('Не удалось определить роль:', err);
         }

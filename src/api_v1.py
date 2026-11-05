@@ -140,8 +140,8 @@ def generate_barcode(db: Session = Depends(get_db), admin: schemas.User = Depend
             return {"code": code}
     raise HTTPException(status_code=500, detail="Не удалось подобрать свободный штрих-код")
 
-@router.put("/products/{product_id}", response_model=schemas.Product, tags=["Продукты"])
-def update_product(product_id: int, data: schemas.ProductUpdate, db: Session = Depends(get_db), admin: schemas.User = Depends(auth.admin_only)):
+def checked_product_fields(db: Session, data: schemas.ProductFields, product_id: int = None) -> dict:
+    """Проверяет поля карточки и возвращает значения для записи в базу."""
     barcode = None
     if data.barcode and data.barcode.strip():
         barcode = barcodes.normalize(data.barcode)
@@ -150,13 +150,43 @@ def update_product(product_id: int, data: schemas.ProductUpdate, db: Session = D
         duplicate = crud.get_product_by_barcode(db, barcode)
         if duplicate and duplicate.id != product_id:
             raise HTTPException(status_code=409, detail=f"Этот штрих-код уже занят: {product_title(duplicate)}")
+    if data.weight_grams is not None and not 0 < data.weight_grams <= 100000:
+        raise HTTPException(status_code=400, detail="Вес должен быть от 1 до 100000 граммов")
+    nutrients = [value for value in (data.protein, data.fat, data.carbs) if value is not None]
+    if any(value < 0 for value in nutrients) or sum(nutrients) > 100:
+        raise HTTPException(status_code=400, detail="Белков, жиров и углеводов вместе не может быть больше 100 г на 100 г, и они не могут быть меньше нуля")
+    return {
+        "composition": (data.composition or "").strip() or None,
+        "barcode": barcode,
+        "weight_grams": data.weight_grams,
+        "protein": data.protein,
+        "fat": data.fat,
+        "carbs": data.carbs,
+    }
+
+@router.post("/products/", response_model=schemas.Product, tags=["Продукты"])
+def create_product(data: schemas.ProductCreate, db: Session = Depends(get_db), admin: schemas.User = Depends(auth.admin_only)):
+    name = data.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Укажите название товара")
+    if crud.get_product_by_name(db, name):
+        raise HTTPException(status_code=409, detail="Товар с таким названием уже есть")
+    fields = checked_product_fields(db, data)
+    try:
+        return crud.create_product(db, name, created_by=admin.full_name or admin.login, category_ids=data.category_ids, **fields)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Название или штрих-код уже заняты другим товаром")
+
+@router.put("/products/{product_id}", response_model=schemas.Product, tags=["Продукты"])
+def update_product(product_id: int, data: schemas.ProductUpdate, db: Session = Depends(get_db), admin: schemas.User = Depends(auth.admin_only)):
+    fields = checked_product_fields(db, data, product_id)
     try:
         product = crud.update_product(
             db, product_id,
-            display_name=(data.display_name or "").strip() or None,
-            composition=(data.composition or "").strip() or None,
-            barcode=barcode,
             category_ids=data.category_ids,
+            display_name=(data.display_name or "").strip() or None,
+            **fields,
         )
     except IntegrityError:
         db.rollback()

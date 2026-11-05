@@ -683,6 +683,7 @@ thead th:nth-child(2), tbody td:nth-child(2) { width: 22%; text-align: center; }
 
 .product-filters { margin-bottom: 16px; }
 .product-filters input[type="search"] { width: 280px; }
+.product-add { margin-left: auto; }
 
 .product-list-container {
     min-height: 360px;
@@ -693,9 +694,27 @@ thead th:nth-child(2), tbody td:nth-child(2) { width: 22%; text-align: center; }
 }
 .product-list-empty { padding: 20px; text-align: center; }
 
+.product-list-head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 9rem 5rem;
+    gap: 16px;
+    padding: 9px 16px;
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    background: var(--paper);
+    border-bottom: 1px solid var(--line-strong);
+}
+
 .product-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 13ch;
+    grid-template-columns: minmax(0, 1fr) 9rem 5rem;
     align-items: center;
     gap: 16px;
     padding: 11px 16px;
@@ -709,7 +728,9 @@ thead th:nth-child(2), tbody td:nth-child(2) { width: 22%; text-align: center; }
 .product-row:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
 
 .product-name { font-weight: 600; font-size: 0.88rem; transition: color 0.12s; }
-.product-barcode { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); text-align: right; }
+.product-barcode { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
+.product-weight { text-align: right; }
+.product-row .product-weight { font-family: var(--mono); font-size: 0.78rem; color: var(--ink-soft); }
 
 .tag {
     font-family: var(--mono);
@@ -1240,6 +1261,28 @@ textarea.styled-text-input { resize: vertical; min-height: 64px; line-height: 1.
 .pc-title { min-width: 0; }
 .pc-title .eyebrow { display: block; margin-bottom: 6px; }
 .pc-title h2 { font-size: 1.3rem; line-height: 1.25; text-wrap: pretty; }
+.pc-origin { margin-top: 8px; font-size: 0.78rem; line-height: 1.4; color: var(--muted); }
+.pc-origin-mark {
+    display: inline-block;
+    margin-right: 4px;
+    padding: 1px 6px;
+    font-family: var(--mono);
+    font-size: 0.64rem;
+    font-weight: 600;
+    color: var(--ink-soft);
+    background: var(--paper);
+    border: 1px solid var(--line-strong);
+    border-radius: 4px;
+}
+.pc-main .pc-weight-input.styled-text-input { width: 130px; }
+.pc-nutrition-inputs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.pc-nutrition-inputs label { display: flex; flex-direction: column; gap: 5px; font-size: 0.78rem; color: var(--ink-soft); }
+.pc-nutrition-wrap { overflow-x: auto; }
+.pc-nutrition { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.pc-nutrition th, .pc-nutrition td { padding: 7px 8px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+.pc-nutrition thead th { font-family: var(--mono); font-size: 0.64rem; font-weight: 600; color: var(--muted); }
+.pc-nutrition tbody th { font-weight: 500; text-align: left; padding-left: 0; }
+.pc-nutrition td { font-family: var(--mono); }
 .pc-head-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .pc-head-actions .icon-btn { height: 32px; width: 32px; }
 
@@ -1305,9 +1348,13 @@ textarea.styled-text-input { resize: vertical; min-height: 64px; line-height: 1.
     .pc-main { padding: 20px; }
     .pc-footer { padding: 14px 20px; flex-wrap: wrap; }
     .pc-error { flex-basis: 100%; }
-    .product-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
-    .product-barcode { text-align: left; }
-    .product-barcode:empty { display: none; }
+    .product-list-head { display: none; }
+    .product-row { grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; }
+    .product-row .product-name { grid-column: 1 / -1; }
+    .product-add { margin-left: 0; width: 100%; }
+    .pc-nutrition th, .pc-nutrition td { padding: 6px 3px; font-size: 0.7rem; }
+    .pc-nutrition thead th { font-size: 0.56rem; white-space: normal; }
+    .pc-nutrition tbody th { white-space: normal; }
 }
 
 /* ============================================================

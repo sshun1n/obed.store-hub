@@ -1,6 +1,8 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, computed_field, field_validator
 from typing import List, Optional
 from datetime import datetime, date
+
+from src.service import parse_weight
 
 # --- СХЕМЫ КАТЕГОРИЙ ---
 
@@ -28,16 +30,42 @@ class Product(ProductBase):
     display_name: Optional[str] = None
     composition: Optional[str] = None
     barcode: Optional[str] = None
+    weight_grams: Optional[int] = None
+    protein: Optional[float] = None
+    fat: Optional[float] = None
+    carbs: Optional[float] = None
+    source: str = 'sheet'
+    created_at: Optional[datetime] = None
+    created_by: Optional[str] = None
     categories: List[Category] = []
+
+    @computed_field
+    @property
+    def weight_from_name(self) -> Optional[int]:
+        return parse_weight(self.name_from_sheet)
+
+    @field_validator('source', mode='before')
+    @classmethod
+    def _null_source(cls, v):
+        return v or 'sheet'
 
     class Config:
         from_attributes = True
 
-class ProductUpdate(BaseModel):
-    display_name: Optional[str] = None
+class ProductFields(BaseModel):
     composition: Optional[str] = None
     barcode: Optional[str] = None
+    weight_grams: Optional[int] = None
+    protein: Optional[float] = None
+    fat: Optional[float] = None
+    carbs: Optional[float] = None
     category_ids: List[int] = []
+
+class ProductUpdate(ProductFields):
+    display_name: Optional[str] = None
+
+class ProductCreate(ProductFields):
+    name: str
 
 # --- СХЕМЫ СИНХРОНИЗАЦИИ ---
 

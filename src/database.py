@@ -61,6 +61,16 @@ class Product(Base):
     display_name = Column(String, nullable=True)
     composition = Column(String, nullable=True)
     barcode = Column(String(13), unique=True, nullable=True)  # EAN-13
+    # Вес порции в граммах. Пусто — берём из названия
+    weight_grams = Column(Integer, nullable=True)
+    # Белки, жиры и углеводы на 100 г. Калорийность считается из них
+    protein = Column(Float, nullable=True)
+    fat = Column(Float, nullable=True)
+    carbs = Column(Float, nullable=True)
+    # Откуда товар: 'sheet' — программа нашла в таблице, 'manual' — добавил человек
+    source = Column(String, default="sheet", nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=True)  # у старых товаров пусто
+    created_by = Column(String, nullable=True)
 
     categories = relationship("Category", secondary="product_category_map", back_populates="products")
 
