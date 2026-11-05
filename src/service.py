@@ -13,6 +13,16 @@ logger = logging.getLogger(__name__)
 
 # --- КЛАССЫ ИСКЛЮЧЕНИЙ ---
 
+def parse_dish_name(full_name: str) -> Tuple[str, str]:
+    """Разделяет название блюда на основную часть и состав."""
+    # Поиск веса (1/100 или 150 гр)
+    match = re.search(r'(\d+\s*/\s*\d+)|(\d+\s*гр\.?)', full_name, re.IGNORECASE)
+    if match:
+        end_pos = match.end()
+        return full_name[:end_pos].strip(), full_name[end_pos:].strip()
+    return full_name.strip(), ""
+
+
 class ServiceError(Exception):
     """Базовое исключение для сервиса."""
     pass
@@ -107,13 +117,7 @@ class NomenclatureService:
         return -1, -1, -1
     
     def _parse_dish_name(self, full_name: str) -> Tuple[str, str]:
-        """Разделяет название блюда на основную часть и состав."""
-        # Поиск веса (1/100 или 150 гр)
-        match = re.search(r'(\d+\s*/\s*\d+)|(\d+\s*гр\.?)', full_name, re.IGNORECASE)
-        if match:
-            end_pos = match.end()
-            return full_name[:end_pos].strip(), full_name[end_pos:].strip()
-        return full_name.strip(), ""
+        return parse_dish_name(full_name)
 
     def get_aggregated_nomenclature(self, spreadsheet_id: str, sheet_name: str) -> List[Dict[str, Any]]:
         """Агрегирует количество всех блюд из таблицы."""

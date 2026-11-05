@@ -1,4 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
+    const { esc, api, toast, openModal, closeModal, confirmDialog } = window.Hub;
+
     const categoryTreeContainer = document.getElementById('categoryTree');
     const addCategoryForm = document.getElementById('addCategoryForm');
     const categoryNameInput = document.getElementById('categoryName');
@@ -10,78 +12,70 @@ document.addEventListener('DOMContentLoaded', () => {
     const productStatusMsg = document.getElementById('productStatusMsg');
     const categoryContextMenu = document.getElementById('categoryContextMenu');
 
-    // --- State ---
-    let allCategories = []; 
-    let treeCategories = []; 
+    const productModal = document.getElementById('productModal');
+    const productCard = document.getElementById('productCard');
+
+    // --- Состояние ---
+    let allCategories = [];
+    let treeCategories = [];
     let allProducts = [];
     let productSearchTerm = '';
     let productCategoryFilterId = '';
-    let currentUser = null;
+    let isAdmin = false;
 
-    // --- 1. API Communication ---
+    // Открытая карточка: товар, режим и черновик правок
+    let cardProduct = null;
+    let cardEditing = false;
+    let draft = null;
+
+    // --- 1. Запросы к API ---
 
     async function createCategory(name, parentId = null) {
-        const newCategory = { name, parent_id: parentId };
-        const response = await fetch('/api/v1/categories/', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(newCategory),
-        });
-        if (!response.ok) throw new Error('Не удалось создать категорию.');
+        await api('/api/v1/categories/', { method: 'POST', body: { name, parent_id: parentId } });
         await fetchAndRenderCategories();
     }
 
     async function deleteCategory(categoryId) {
         if (!confirm('Вы уверены, что хотите удалить эту категорию?')) return;
-        const response = await fetch(`/api/v1/categories/${categoryId}`, { method: 'DELETE' });
-        if (!response.ok) throw new Error('Не удалось удалить категорию.');
+        await api(`/api/v1/categories/${categoryId}`, { method: 'DELETE' });
         await fetchAndRenderCategories();
+        await loadProducts();
     }
 
-    async function syncAndFetchProducts() {
-        try {
-            productStatusMsg.innerText = 'Синхронизация...';
-            const nomResponse = await fetch('/api/nomenclature');
-            const nomData = await nomResponse.json();
-            const names = nomData.data.map(item => item.full_name);
-
-            await fetch('/api/v1/products/sync', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(names)
-            });
-
-            const prodResponse = await fetch('/api/v1/products/');
-            allProducts = await prodResponse.json();
-            
-            productStatusMsg.innerText = '';
-            renderProductList();
-        } catch (error) {
-            console.error('Ошибка синхронизации продуктов:', error);
-            productStatusMsg.innerText = 'Ошибка синхронизации';
-        }
-    }
-
-    async function updateProductCategories(productId, categoryIds) {
-        const response = await fetch(`/api/v1/products/${productId}/categories`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ category_ids: categoryIds })
-        });
-        if (!response.ok) throw new Error('Не удалось обновить категории.');
-        const updatedProduct = await response.json();
-        
-        const idx = allProducts.findIndex(p => p.id === productId);
-        if (idx !== -1) allProducts[idx] = updatedProduct;
-        
+    async function loadProducts() {
+        allProducts = await api('/api/v1/products/');
         renderProductList();
     }
 
-    // --- 2. Rendering ---
+    // Обновление из таблицы не должно мешать показать справочник: у менеджера нет
+    // права на синхронизацию, а Google может быть недоступен
+    async function syncAndFetchProducts() {
+        productStatusMsg.innerText = 'Синхронизация…';
+        let syncError = false;
+        try {
+            const nomData = await api('/api/nomenclature');
+            const names = nomData.data.map(item => item.full_name);
+            if (isAdmin) await api('/api/v1/products/sync', { method: 'POST', body: names });
+        } catch (error) {
+            console.error('Ошибка синхронизации продуктов:', error);
+            syncError = true;
+        }
+        try {
+            await loadProducts();
+            productStatusMsg.innerText = syncError ? 'Таблица недоступна, показан сохранённый справочник' : '';
+            productStatusMsg.classList.toggle('ts-warn', syncError);
+        } catch (error) {
+            console.error('Ошибка загрузки справочника:', error);
+            productStatusMsg.innerText = 'Ошибка загрузки справочника';
+            productStatusMsg.classList.add('ts-warn');
+        }
+    }
+
+    // --- 2. Категории и список товаров ---
 
     function getHierarchyPrefix(level) {
         if (level === 0) return "";
-        return "└─ ".padStart(level * 3, "\u00A0");
+        return "└─ ".padStart(level * 3, " ");
     }
 
     function buildCategoryTreeHtml(categories) {
@@ -91,7 +85,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const hasChildren = category.children && category.children.length > 0;
             html += `<li data-id="${category.id}">
                 <div class="category-item">
-                    <span>${category.name}</span>
+                    <span>${esc(category.name)}</span>
                     <div class="category-actions">
                         <button class="action-btn btn-add-child" title="Добавить подкатегорию">[+]</button>
                         <button class="action-btn btn-delete-category" title="Удалить категорию" ${hasChildren ? 'disabled' : ''}>[x]</button>
@@ -102,7 +96,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         return html + '</ul>';
     }
-    
+
     function flattenCategories(categories, level = 0) {
         let flat = [];
         for (const c of categories) {
@@ -116,7 +110,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let optionsHtml = '';
         for (const category of categories) {
             const prefix = getHierarchyPrefix(level);
-            optionsHtml += `<option value="${category.id}">${prefix}${category.name}</option>`;
+            optionsHtml += `<option value="${category.id}">${prefix}${esc(category.name)}</option>`;
             if (category.children) optionsHtml += buildDropdownOptions(category.children, level + 1);
         }
         return optionsHtml;
@@ -124,27 +118,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function fetchAndRenderCategories() {
         try {
-            const response = await fetch('/api/v1/categories/');
-            treeCategories = await response.json();
+            treeCategories = await api('/api/v1/categories/');
             allCategories = flattenCategories(treeCategories);
 
-            categoryTreeContainer.innerHTML = treeCategories.length === 0 
-                ? '<p class="text-muted">Категорий пока нет.</p>' 
+            categoryTreeContainer.innerHTML = treeCategories.length === 0
+                ? '<p class="text-muted">Категорий пока нет.</p>'
                 : buildCategoryTreeHtml(treeCategories);
-            
-            parentCategorySelect.innerHTML = '<option value="">-- Корневая категория --</option>' + buildDropdownOptions(treeCategories);
-            parentCategorySelect.disabled = false;
+
+            parentCategorySelect.innerHTML = '<option value="">Корневая</option>' + buildDropdownOptions(treeCategories);
 
             const currentFilterValue = productCategoryFilter.value;
             productCategoryFilter.innerHTML = `
-                <option value="">-- Все категории --</option>
+                <option value="">Все категории</option>
                 <option value="none">Без категории</option>
             ` + buildDropdownOptions(treeCategories);
             productCategoryFilter.value = currentFilterValue;
-            
+
             if (allProducts.length > 0) renderProductList();
         } catch (error) {
-            categoryTreeContainer.innerHTML = `<p style="color: red;">${error.message}</p>`;
+            categoryTreeContainer.innerHTML = `<p class="ts-warn">${esc(error.message)}</p>`;
         }
     }
 
@@ -160,6 +152,15 @@ document.addEventListener('DOMContentLoaded', () => {
         return { mainPart, composition };
     }
 
+    // Что показывать: правка из карточки, а если её нет — разбор названия из таблицы
+    function productLabel(product) {
+        const parsed = parseDishName(product.name_from_sheet);
+        return {
+            name: product.display_name || parsed.mainPart,
+            composition: product.composition || parsed.composition,
+        };
+    }
+
     function renderProductList() {
         let filtered = [...allProducts];
 
@@ -172,90 +173,285 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (productSearchTerm) {
             const term = productSearchTerm.toLowerCase();
-            filtered = filtered.filter(p => p.name_from_sheet.toLowerCase().includes(term));
+            filtered = filtered.filter(p =>
+                p.name_from_sheet.toLowerCase().includes(term)
+                || (p.display_name || '').toLowerCase().includes(term)
+                || (p.barcode || '').includes(term));
         }
 
-        filtered.sort((a, b) => a.name_from_sheet.localeCompare(b.name_from_sheet));
+        filtered.sort((a, b) => productLabel(a).name.localeCompare(productLabel(b).name));
 
         if (filtered.length === 0) {
-            productListContainer.innerHTML = '<p class="text-muted" style="padding: 20px; text-align: center;">Ничего не найдено</p>';
+            productListContainer.innerHTML = '<p class="text-muted product-list-empty">Ничего не найдено</p>';
             return;
         }
 
         productListContainer.innerHTML = filtered.map(product => {
-            const { mainPart, composition } = parseDishName(product.name_from_sheet);
-            const tagsHtml = product.categories.map(cat => `
-                <span class="tag">
-                    ${cat.name}
-                    <span class="tag-remove" data-cat-id="${cat.id}" data-prod-id="${product.id}" title="Отвязать">&times;</span>
-                </span>
-            `).join('');
-
+            const tags = product.categories.length
+                ? product.categories.map(cat => `<span class="cat-tag">${esc(cat.name)}</span>`).join('')
+                : '<span class="cat-tag cat-tag-warn">нет категории</span>';
             return `
-                <div class="product-row" data-id="${product.id}">
-                    <div class="product-info">
-                        <span class="product-name">${mainPart}</span>
-                        <span class="product-composition">${composition}</span>
-                    </div>
-                    <div class="product-tags">
-                        ${tagsHtml}
-                        <button class="tag-add" data-prod-id="${product.id}">+ Привязать</button>
-                    </div>
+                <div class="product-row" data-id="${product.id}" role="button" tabindex="0">
+                    <span class="product-name">${esc(productLabel(product).name)}</span>
+                    <span class="product-tags">${tags}</span>
+                    <span class="product-barcode">${esc(product.barcode || '')}</span>
                 </div>
             `;
         }).join('');
+    }
 
-        if (window.location.hash === '#product-directory') {
-            const el = document.getElementById('product-directory');
-            if (el) {
-                setTimeout(() => { el.scrollIntoView({ behavior: 'smooth' }); }, 100);
-            }
+    // --- 3. Карточка товара ---
+
+    function barcodeUrl(product, download = false) {
+        // Код в адресе — чтобы браузер не показал старую картинку после замены
+        return `/api/v1/products/${product.id}/barcode.png?code=${product.barcode}${download ? '&download=true' : ''}`;
+    }
+
+    function renderCategoryTags(categories, editable) {
+        const tags = categories.map(cat => `
+            <span class="tag">${esc(cat.name)}${editable
+                ? `<span class="tag-remove" data-cat-id="${cat.id}" role="button" title="Отвязать">&times;</span>`
+                : ''}</span>
+        `).join('');
+        const add = editable ? '<button type="button" class="tag-add" data-act="add-category">+ Привязать</button>' : '';
+        if (!tags && !add) return '<span class="text-muted">Не привязан</span>';
+        return tags + add;
+    }
+
+    function renderBarcodeView(product) {
+        if (!product.barcode) {
+            return `
+                <div class="pc-barcode-empty">
+                    <span class="pc-barcode-glyph" aria-hidden="true">▮▯▮</span>
+                    <span>Штрих-код не задан</span>
+                    ${isAdmin ? '<button type="button" class="btn btn-secondary btn-sm" data-act="edit">Добавить</button>' : ''}
+                </div>`;
+        }
+        return `
+            <div class="pc-barcode-image">
+                <img src="${barcodeUrl(product)}" alt="EAN-13 ${esc(product.barcode)}">
+            </div>
+            <a class="btn btn-secondary pc-download" href="${barcodeUrl(product, true)}">Скачать PNG для этикетки</a>`;
+    }
+
+    function renderBarcodeEdit() {
+        return `
+            <div class="form-group">
+                <label for="pcBarcode" class="control-label">EAN-13</label>
+                <input type="text" id="pcBarcode" class="styled-text-input pc-barcode-input" inputmode="numeric" maxlength="14" autocomplete="off" value="${esc(draft.barcode)}" placeholder="13 цифр">
+                <span class="field-hint">Введите код с упаковки или сгенерируйте внутренний. Из 12 цифр контрольная будет дописана сама.</span>
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm pc-generate" data-act="generate">Сгенерировать</button>`;
+    }
+
+    function renderCard() {
+        const product = cardProduct;
+        const label = productLabel(product);
+        const parsed = parseDishName(product.name_from_sheet);
+        const draftCategories = cardEditing
+            ? allCategories.filter(c => draft.categoryIds.includes(c.id))
+            : product.categories;
+
+        const mainHtml = cardEditing ? `
+            <div class="form-group">
+                <label for="pcName" class="control-label">Название</label>
+                <input type="text" id="pcName" class="styled-text-input" value="${esc(draft.name)}" placeholder="${esc(parsed.mainPart)}">
+            </div>
+            <div class="form-group">
+                <label for="pcComposition" class="control-label">Состав</label>
+                <textarea id="pcComposition" class="styled-text-input" rows="6" placeholder="${esc(parsed.composition)}">${esc(draft.composition)}</textarea>
+                <span class="field-hint">Пустое поле вернёт значение из таблицы.</span>
+            </div>
+            <div class="form-group">
+                <span class="control-label">Категории</span>
+                <div class="pc-tags" id="pcTags">${renderCategoryTags(draftCategories, true)}</div>
+            </div>
+        ` : `
+            <div class="pc-field">
+                <span class="control-label">Состав</span>
+                <p class="pc-text">${label.composition ? esc(label.composition) : '<span class="text-muted">Не указан</span>'}</p>
+            </div>
+            <div class="pc-field">
+                <span class="control-label">Категории</span>
+                <div class="pc-tags">${renderCategoryTags(draftCategories, false)}</div>
+            </div>
+        `;
+
+        productCard.innerHTML = `
+            <header class="pc-head">
+                <div class="pc-title">
+                    <span class="eyebrow">Карточка товара</span>
+                    <h2>${esc(label.name)}</h2>
+                </div>
+                <div class="pc-head-actions">
+                    ${isAdmin && !cardEditing ? '<button type="button" class="btn btn-secondary btn-sm" data-act="edit">Редактировать</button>' : ''}
+                    <button type="button" class="icon-btn" data-act="close" aria-label="Закрыть">&times;</button>
+                </div>
+            </header>
+            <div class="pc-body">
+                <div class="pc-main">
+                    ${mainHtml}
+                    <div class="pc-field pc-source">
+                        <span class="control-label">Название в таблице</span>
+                        <p>${esc(product.name_from_sheet)}</p>
+                    </div>
+                </div>
+                <aside class="pc-side">
+                    <h3 class="pc-side-title">Штрих-код</h3>
+                    ${cardEditing ? renderBarcodeEdit() : renderBarcodeView(product)}
+                </aside>
+            </div>
+            ${cardEditing ? `
+                <footer class="pc-footer">
+                    <span class="error-msg pc-error" id="pcError"></span>
+                    <button type="button" class="btn btn-secondary" data-act="cancel">Отмена</button>
+                    <button type="button" class="btn btn-primary" data-act="save">Сохранить</button>
+                </footer>` : ''}
+        `;
+
+        // Пока идёт правка, окно не закрывается от Esc и клика мимо
+        productModal.toggleAttribute('data-keep-open', cardEditing);
+    }
+
+    function openCard(productId) {
+        cardProduct = allProducts.find(p => p.id === productId);
+        if (!cardProduct) return;
+        cardEditing = false;
+        draft = null;
+        renderCard();
+        openModal(productModal);
+    }
+
+    function startEdit() {
+        const product = cardProduct;
+        const label = productLabel(product);
+        draft = {
+            name: label.name,
+            composition: label.composition,
+            barcode: product.barcode || '',
+            categoryIds: product.categories.map(c => c.id),
+        };
+        cardEditing = true;
+        renderCard();
+        document.getElementById('pcName').focus();
+    }
+
+    // Поля ввода перерисовываются при правке категорий, поэтому черновик держим в draft
+    function readDraftFields() {
+        draft.name = document.getElementById('pcName').value;
+        draft.composition = document.getElementById('pcComposition').value;
+        draft.barcode = document.getElementById('pcBarcode').value;
+    }
+
+    function hasUnsavedChanges() {
+        readDraftFields();
+        const product = cardProduct;
+        const label = productLabel(product);
+        const sameCategories = [...draft.categoryIds].sort().join() === product.categories.map(c => c.id).sort().join();
+        return draft.name.trim() !== label.name
+            || draft.composition.trim() !== label.composition
+            || draft.barcode.trim() !== (product.barcode || '')
+            || !sameCategories;
+    }
+
+    async function leaveEdit(thenClose) {
+        if (hasUnsavedChanges()) {
+            const ok = await confirmDialog({
+                title: 'Отменить изменения?',
+                text: 'Правки в карточке не сохранены и будут потеряны.',
+                okText: 'Не сохранять',
+            });
+            if (!ok) return;
+        }
+        cardEditing = false;
+        draft = null;
+        renderCard();
+        if (thenClose) closeModal(productModal);
+    }
+
+    async function saveCard(saveBtn) {
+        readDraftFields();
+        const parsed = parseDishName(cardProduct.name_from_sheet);
+        const name = draft.name.trim();
+        const composition = draft.composition.trim();
+        const errorEl = document.getElementById('pcError');
+        errorEl.textContent = '';
+        saveBtn.disabled = true;
+        try {
+            const updated = await api(`/api/v1/products/${cardProduct.id}`, {
+                method: 'PUT',
+                body: {
+                    // Совпадает с таблицей — правки нет, поле снова следует за таблицей
+                    display_name: name === parsed.mainPart ? null : name,
+                    composition: composition === parsed.composition ? null : composition,
+                    barcode: draft.barcode,
+                    category_ids: draft.categoryIds,
+                },
+            });
+            const idx = allProducts.findIndex(p => p.id === updated.id);
+            if (idx !== -1) allProducts[idx] = updated;
+            cardProduct = updated;
+            cardEditing = false;
+            draft = null;
+            renderCard();
+            renderProductList();
+            toast('Карточка сохранена');
+        } catch (err) {
+            errorEl.textContent = err.message;
+            saveBtn.disabled = false;
         }
     }
 
-    // --- 3. Context Menu Logic ---
+    async function generateBarcode() {
+        const input = document.getElementById('pcBarcode');
+        if (input.value.trim()) {
+            const ok = await confirmDialog({
+                title: 'Заменить штрих-код?',
+                text: 'Этикетки, напечатанные с прежним кодом, перестанут ему соответствовать.',
+                okText: 'Заменить',
+            });
+            if (!ok) return;
+        }
+        try {
+            const { code } = await api('/api/v1/products/barcode/generate');
+            input.value = code;
+        } catch (err) {
+            toast(err.message, 'error');
+        }
+    }
 
-    function showCategoryContextMenu(productId, buttonEl) {
-        const product = allProducts.find(p => p.id === productId);
-        const currentCatIds = product.categories.map(c => c.id);
-        const available = allCategories.filter(c => !currentCatIds.includes(c.id));
-
+    function showCategoryMenu(buttonEl) {
+        const available = allCategories.filter(c => !draft.categoryIds.includes(c.id));
         if (available.length === 0) {
-            alert('Все доступные категории уже привязаны.');
+            toast('Все доступные категории уже привязаны');
             return;
         }
 
-        categoryContextMenu.innerHTML = available.map(cat => {
-            const prefix = getHierarchyPrefix(cat.level).replace(/&nbsp;/g, ' ');
-            return `
-                <div class="menu-item" data-cat-id="${cat.id}" data-prod-id="${productId}">
-                    <span>${prefix}${cat.name}</span>
-                </div>
-            `;
-        }).join('');
-
+        categoryContextMenu.innerHTML = available.map(cat => `
+            <div class="menu-item" data-cat-id="${cat.id}">
+                <span>${getHierarchyPrefix(cat.level)}${esc(cat.name)}</span>
+            </div>
+        `).join('');
         categoryContextMenu.hidden = false;
 
         const rect = buttonEl.getBoundingClientRect();
         const menuHeight = categoryContextMenu.offsetHeight;
-        const viewportHeight = window.innerHeight;
-
         let top = rect.bottom + 5;
-        let left = rect.left;
-
-        if (top + menuHeight > viewportHeight) {
-            top = rect.top - menuHeight - 5;
-        }
-
+        if (top + menuHeight > window.innerHeight) top = rect.top - menuHeight - 5;
         categoryContextMenu.style.top = `${top}px`;
-        categoryContextMenu.style.left = `${left}px`;
+        categoryContextMenu.style.left = `${rect.left}px`;
     }
 
-    function hideCategoryContextMenu() {
+    function hideCategoryMenu() {
         categoryContextMenu.hidden = true;
     }
 
-    // --- 4. Event Handlers ---
+    function refreshDraftTags() {
+        const selected = allCategories.filter(c => draft.categoryIds.includes(c.id));
+        document.getElementById('pcTags').innerHTML = renderCategoryTags(selected, true);
+    }
+
+    // --- 4. Обработчики ---
 
     addCategoryForm.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -266,7 +462,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 await createCategory(name, parentId);
                 categoryNameInput.value = '';
                 parentCategorySelect.value = '';
-            } catch (err) { alert(err.message); }
+            } catch (err) { toast(err.message, 'error'); }
         }
     });
 
@@ -280,7 +476,7 @@ document.addEventListener('DOMContentLoaded', () => {
             parentCategorySelect.value = id;
             categoryNameInput.focus();
         } else if (target.classList.contains('btn-delete-category')) {
-            deleteCategory(id).catch(err => alert(err.message));
+            deleteCategory(id).catch(err => toast(err.message, 'error'));
         }
     });
 
@@ -294,51 +490,68 @@ document.addEventListener('DOMContentLoaded', () => {
         renderProductList();
     });
 
-    productListContainer.addEventListener('click', async (e) => {
-        const target = e.target;
-        
-        if (target.classList.contains('tag-remove')) {
-            const prodId = parseInt(target.dataset.prodId, 10);
-            const catId = parseInt(target.dataset.catId, 10);
-            const product = allProducts.find(p => p.id === prodId);
-            const newCatIds = product.categories.filter(c => c.id !== catId).map(c => c.id);
-            updateProductCategories(prodId, newCatIds).catch(err => alert(err.message));
-        }
+    productListContainer.addEventListener('click', (e) => {
+        const row = e.target.closest('.product-row');
+        if (row) openCard(parseInt(row.dataset.id, 10));
+    });
 
-        if (target.classList.contains('tag-add')) {
-            const prodId = parseInt(target.dataset.prodId, 10);
-            showCategoryContextMenu(prodId, target);
+    productListContainer.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        const row = e.target.closest('.product-row');
+        if (!row) return;
+        e.preventDefault();
+        openCard(parseInt(row.dataset.id, 10));
+    });
+
+    productCard.addEventListener('click', (e) => {
+        if (e.target.classList.contains('tag-remove')) {
+            const catId = parseInt(e.target.dataset.catId, 10);
+            draft.categoryIds = draft.categoryIds.filter(id => id !== catId);
+            refreshDraftTags();
+            return;
+        }
+        const button = e.target.closest('[data-act]');
+        if (!button) return;
+        const act = button.dataset.act;
+        if (act === 'edit') startEdit();
+        else if (act === 'cancel') leaveEdit(false);
+        else if (act === 'save') saveCard(button);
+        else if (act === 'generate') generateBarcode();
+        else if (act === 'add-category') showCategoryMenu(button);
+        else if (act === 'close') {
+            if (cardEditing) leaveEdit(true);
+            else closeModal(productModal);
         }
     });
 
     categoryContextMenu.addEventListener('click', (e) => {
         const item = e.target.closest('.menu-item');
         if (!item) return;
-
-        const prodId = parseInt(item.dataset.prodId, 10);
-        const catId = parseInt(item.dataset.catId, 10);
-        const product = allProducts.find(p => p.id === prodId);
-        const currentCatIds = product.categories.map(c => c.id);
-
-        updateProductCategories(prodId, [...currentCatIds, catId])
-            .then(() => hideCategoryContextMenu())
-            .catch(err => alert(err.message));
+        draft.categoryIds.push(parseInt(item.dataset.catId, 10));
+        refreshDraftTags();
+        hideCategoryMenu();
     });
 
     document.addEventListener('click', (e) => {
         if (!categoryContextMenu.contains(e.target) && !e.target.classList.contains('tag-add')) {
-            hideCategoryContextMenu();
+            hideCategoryMenu();
         }
     });
 
-    // --- 5. Initialization ---
+    // --- 5. Запуск ---
     async function init() {
-        // Проверка параметров URL для предустановки фильтра
+        // Ссылка с номенклатуры открывает товары без категории
         const urlParams = new URLSearchParams(window.location.search);
-        const filterParam = urlParams.get('filter');
-        if (filterParam === 'none') {
+        if (urlParams.get('filter') === 'none') {
             productCategoryFilterId = 'none';
-            if (productCategoryFilter) productCategoryFilter.value = 'none';
+            productCategoryFilter.value = 'none';
+        }
+
+        try {
+            const user = await api('/api/v1/users/me');
+            isAdmin = user.role === 'admin';
+        } catch (err) {
+            console.error('Не удалось определить роль:', err);
         }
 
         fetchAndRenderCategories();

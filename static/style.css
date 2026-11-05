@@ -679,29 +679,37 @@ thead th:nth-child(2), tbody td:nth-child(2) { width: 22%; text-align: center; }
 .action-btn:hover { text-decoration: underline; }
 .action-btn:disabled { color: var(--line-strong); cursor: not-allowed; text-decoration: none; }
 
+.section-title { font-size: 1.4rem; }
+
+.product-filters { margin-bottom: 16px; }
+
 .product-list-container {
-    max-height: 600px;
+    max-height: max(360px, calc(100vh - 300px));
     overflow-y: auto;
     border: 1px solid var(--line);
     border-radius: 8px;
 }
+.product-list-empty { padding: 20px; text-align: center; }
 
 .product-row {
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, auto) 13ch;
     align-items: center;
     gap: 16px;
     padding: 11px 16px;
     border-bottom: 1px solid var(--line);
+    cursor: pointer;
+    transition: background 0.12s;
 }
 .product-row:last-child { border-bottom: none; }
 .product-row:hover { background: #FAF9F6; }
+.product-row:hover .product-name { color: var(--red); }
+.product-row:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
 
-.product-info { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
-.product-name { font-weight: 600; font-size: 0.88rem; }
-.product-composition { font-size: 0.74rem; color: var(--muted); }
-
-.product-tags { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.product-name { font-weight: 600; font-size: 0.88rem; transition: color 0.12s; }
+.product-tags { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+.product-tags .cat-tag { margin-right: 0; }
+.product-barcode { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); text-align: right; }
 
 .tag {
     font-family: var(--mono);
@@ -740,7 +748,7 @@ thead th:nth-child(2), tbody td:nth-child(2) { width: 22%; text-align: center; }
     border: 1px solid var(--line-strong);
     border-radius: 8px;
     box-shadow: 0 12px 32px -8px rgba(23, 23, 26, 0.18);
-    z-index: 2000;
+    z-index: 3100; /* над модальным окном: меню открывается из карточки товара */
     max-height: 300px;
     overflow-y: auto;
     min-width: 230px;
@@ -1149,6 +1157,93 @@ textarea.styled-text-input { resize: vertical; min-height: 64px; line-height: 1.
 .click-row:hover .row-link { color: var(--red); }
 .row-archived .row-link, .row-archived .ts-num, .row-archived .cell-soft { color: var(--muted); }
 .cell-soft { color: var(--ink-soft); }
+
+/* ============================================================
+   Карточка товара
+   ============================================================ */
+.modal-content.product-card { max-width: 880px; padding: 0; }
+
+.pc-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 24px 28px 20px;
+    border-bottom: 1px solid var(--line);
+}
+.pc-title { min-width: 0; }
+.pc-title .eyebrow { display: block; margin-bottom: 6px; }
+.pc-title h2 { font-size: 1.3rem; line-height: 1.25; text-wrap: pretty; }
+.pc-head-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.pc-head-actions .icon-btn { height: 32px; width: 32px; }
+
+.pc-body { display: grid; grid-template-columns: minmax(0, 1fr) 320px; }
+.pc-main { display: flex; flex-direction: column; gap: 20px; padding: 24px 28px; min-width: 0; }
+.pc-main .styled-text-input { width: 100%; min-width: 0; }
+
+.pc-field { display: flex; flex-direction: column; gap: 7px; }
+.pc-text { font-size: 0.92rem; line-height: 1.55; white-space: pre-line; }
+.pc-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 0.9rem; }
+.pc-source { margin-top: auto; padding-top: 16px; border-top: 1px dashed var(--line-strong); }
+.pc-source p { font-size: 0.78rem; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
+
+.pc-side {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 24px;
+    background: #FAF9F6;
+    border-left: 1px solid var(--line);
+}
+.pc-side-title { font-size: 0.95rem; font-weight: 700; letter-spacing: -0.01em; }
+.pc-barcode-image {
+    display: flex;
+    justify-content: center;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px;
+}
+.pc-barcode-image img { display: block; width: 100%; height: auto; }
+.pc-download { display: block; text-align: center; text-decoration: none; }
+.pc-barcode-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 26px 12px;
+    font-size: 0.86rem;
+    color: var(--muted);
+    border: 1px dashed var(--line-strong);
+    border-radius: 8px;
+    text-align: center;
+}
+.pc-barcode-glyph { font-size: 1.3rem; letter-spacing: 0.06em; color: var(--line-strong); }
+.pc-barcode-input { font-family: var(--mono); letter-spacing: 0.04em; width: 100%; min-width: 0; }
+.pc-generate { align-self: flex-start; }
+
+.pc-footer {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 28px;
+    border-top: 1px solid var(--line);
+}
+.pc-error { flex: 1; margin: 0; }
+
+@media (max-width: 760px) {
+    .pc-body { grid-template-columns: 1fr; }
+    .pc-side { border-left: none; border-top: 1px solid var(--line); }
+    .pc-head { padding: 20px; }
+    .pc-main { padding: 20px; }
+    .pc-footer { padding: 14px 20px; flex-wrap: wrap; }
+    .pc-error { flex-basis: 100%; }
+    .product-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+    .product-tags { justify-content: flex-start; }
+    .product-barcode { text-align: left; }
+    .product-barcode:empty { display: none; }
+}
 
 /* ============================================================
    Карточка сотрудника

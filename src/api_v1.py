@@ -1,20 +1,26 @@
 import re
 from fastapi import APIRouter, Depends, HTTPException, status, Response
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from typing import List
 from datetime import timedelta
+from urllib.parse import quote
 
-from src import crud, schemas, auth
+from src import barcodes, crud, schemas, auth
 from src.database import get_db
 
 # Импорт для работы с Google Sheets напрямую через API
 import gspread
-from src.service import AppConfig, GoogleSheetClient
+from src.service import AppConfig, GoogleSheetClient, parse_dish_name
 
 router = APIRouter()
 
 # --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
+
+def product_title(product) -> str:
+    """Короткое имя товара: правка из карточки или название из таблицы без состава."""
+    return product.display_name or parse_dish_name(product.name_from_sheet)[0]
 
 def extract_spreadsheet_id(url: str) -> str:
     """Извлекает уникальный ID таблицы из её URL."""
@@ -130,12 +136,50 @@ def sync_products(names: List[str], db: Session = Depends(get_db), admin: schema
     added = crud.sync_products(db, names)
     return {"status": "ok", "added_count": added}
 
-@router.put("/products/{product_id}/categories", response_model=schemas.Product, tags=["Продукты"])
-def update_product_categories(product_id: int, update_data: schemas.ProductCategoriesUpdate, db: Session = Depends(get_db), admin: schemas.User = Depends(auth.admin_only)):
-    product = crud.update_product_categories(db, product_id, update_data.category_ids)
+@router.get("/products/barcode/generate", tags=["Продукты"])
+def generate_barcode(db: Session = Depends(get_db), admin: schemas.User = Depends(auth.admin_only)):
+    """Подбирает свободный внутренний EAN-13. В базу не пишет: код сохранится вместе с карточкой."""
+    for _ in range(10):
+        code = barcodes.generate()
+        if crud.get_product_by_barcode(db, code) is None:
+            return {"code": code}
+    raise HTTPException(status_code=500, detail="Не удалось подобрать свободный штрих-код")
+
+@router.put("/products/{product_id}", response_model=schemas.Product, tags=["Продукты"])
+def update_product(product_id: int, data: schemas.ProductUpdate, db: Session = Depends(get_db), admin: schemas.User = Depends(auth.admin_only)):
+    barcode = None
+    if data.barcode and data.barcode.strip():
+        barcode = barcodes.normalize(data.barcode)
+        if barcode is None:
+            raise HTTPException(status_code=400, detail="Штрих-код должен быть корректным EAN-13: 13 цифр с верной контрольной цифрой")
+        duplicate = crud.get_product_by_barcode(db, barcode)
+        if duplicate and duplicate.id != product_id:
+            raise HTTPException(status_code=409, detail=f"Этот штрих-код уже занят: {product_title(duplicate)}")
+    try:
+        product = crud.update_product(
+            db, product_id,
+            display_name=(data.display_name or "").strip() or None,
+            composition=(data.composition or "").strip() or None,
+            barcode=barcode,
+            category_ids=data.category_ids,
+        )
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Этот штрих-код уже занят другим товаром")
     if not product:
         raise HTTPException(status_code=404, detail="Продукт не найден")
     return product
+
+@router.get("/products/{product_id}/barcode.png", tags=["Продукты"])
+def product_barcode_png(product_id: int, download: bool = False, db: Session = Depends(get_db), user: schemas.User = Depends(auth.get_current_user)):
+    product = crud.get_product(db, product_id)
+    if not product or not product.barcode:
+        raise HTTPException(status_code=404, detail="Штрих-код не задан")
+    headers = {}
+    if download:
+        safe_name = re.sub(r'[\\/:*?"<>|\r\n]', "", f"{product_title(product)} - {product.barcode}")
+        headers["Content-Disposition"] = f"attachment; filename*=UTF-8''{quote(safe_name)}.png"
+    return Response(barcodes.render_png(product.barcode), media_type="image/png", headers=headers)
 
 # --- УПРАВЛЕНИЕ GOOGLE ТАБЛИЦАМИ ---
 

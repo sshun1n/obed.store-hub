@@ -95,11 +95,14 @@ window.Hub = (() => {
     document.addEventListener('keydown', (ev) => {
         if (ev.key !== 'Escape') return;
         const open = [...document.querySelectorAll('.modal.open')].pop();
-        if (open) closeModal(open);
+        // data-keep-open: в окне идёт редактирование, случайно закрывать нельзя
+        if (open && !open.hasAttribute('data-keep-open')) closeModal(open);
     });
 
     document.addEventListener('mousedown', (ev) => {
-        if (ev.target.classList && ev.target.classList.contains('modal')) closeModal(ev.target);
+        if (ev.target.classList && ev.target.classList.contains('modal') && !ev.target.hasAttribute('data-keep-open')) {
+            closeModal(ev.target);
+        }
     });
 
     function confirmDialog({ title, text, okText = 'Удалить', danger = true }) {

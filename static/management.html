@@ -3,73 +3,80 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Управление | OBED.STORE Hub</title>
+    <title>Продукция | OBED.STORE Hub</title>
     <link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=1.8.1">
+    <link rel="stylesheet" href="/static/style.css?v=1.9.0">
 </head>
 <body>
     <div class="container">
         <header class="page-header">
-            <span class="eyebrow">Сервис 03</span>
-            <h1>Управление</h1>
-            <p class="subtitle">Категории, фильтры для цехов и справочник продукции.</p>
+            <span class="eyebrow">Система</span>
+            <h1>Продукция</h1>
+            <p class="subtitle">Справочник товаров из Google Таблиц. Нажмите на товар, чтобы открыть карточку.</p>
         </header>
 
-        <div class="management-grid">
+        <section id="product-directory">
             <div class="card">
-                <h2 class="card-title-small">Дерево категорий</h2>
-                <div id="categoryTree" class="category-tree">
-                    <p class="text-muted">Загрузка категорий…</p>
-                </div>
-            </div>
-
-            <div class="card">
-                <h2 class="card-title-small">Добавить категорию</h2>
-                <form id="addCategoryForm" class="form-layout">
-                    <div class="form-group">
-                        <label for="categoryName" class="control-label">Название</label>
-                        <input type="text" id="categoryName" class="styled-text-input" placeholder="Например, «Горячий цех» или «Десерты»" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="parentCategory" class="control-label">Родительская категория</label>
-                        <select id="parentCategory" class="styled-text-input">
-                            <option value="">— корневая —</option>
-                        </select>
-                    </div>
-                    <button type="submit" class="btn btn-primary" style="align-self: flex-start;">Создать</button>
-                </form>
-            </div>
-        </div>
-
-        <section id="product-directory" class="management-section">
-            <header class="page-header">
-                <h2 style="font-size: 1.4rem;">Справочник продукции</h2>
-                <p class="subtitle">Привяжите позиции из Google Таблиц к категориям и цехам.</p>
-            </header>
-
-            <div class="card">
-                <div class="input-group" style="margin-bottom: 16px;">
-                    <input type="search" id="productSearchInput" class="styled-text-input" placeholder="Поиск продукта…">
+                <div class="input-group product-filters">
+                    <input type="search" id="productSearchInput" class="styled-text-input" placeholder="Название или штрих-код…">
                     <select id="productCategoryFilter" class="styled-text-input">
-                        <option value="">— все категории —</option>
+                        <option value="">Все категории</option>
                         <option value="none">Без категории</option>
                     </select>
                     <div id="productStatusMsg" class="status-text"></div>
                 </div>
 
                 <div id="productList" class="product-list-container">
-                    <p class="text-muted" style="padding: 20px; text-align: center;">Загрузка справочника…</p>
+                    <p class="text-muted product-list-empty">Загрузка справочника…</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="management-section">
+            <header class="page-header">
+                <h2 class="section-title">Категории</h2>
+                <p class="subtitle">Цеха и фильтры. Товары привязываются к ним в карточке.</p>
+            </header>
+
+            <div class="management-grid">
+                <div class="card">
+                    <h3 class="card-title-small">Дерево категорий</h3>
+                    <div id="categoryTree" class="category-tree">
+                        <p class="text-muted">Загрузка категорий…</p>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3 class="card-title-small">Добавить категорию</h3>
+                    <form id="addCategoryForm" class="form-layout">
+                        <div class="form-group">
+                            <label for="categoryName" class="control-label">Название</label>
+                            <input type="text" id="categoryName" class="styled-text-input" placeholder="Например, «Горячий цех» или «Десерты»" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="parentCategory" class="control-label">Родительская категория</label>
+                            <select id="parentCategory" class="styled-text-input">
+                                <option value="">Корневая</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-primary" style="align-self: flex-start;">Создать</button>
+                    </form>
                 </div>
             </div>
         </section>
     </div>
 
+    <div class="modal" id="productModal">
+        <div class="modal-content product-card" id="productCard" role="dialog" aria-modal="true"></div>
+    </div>
+
     <div id="categoryContextMenu" class="context-menu" hidden></div>
 
-    <script src="/static/components.js?v=1.8.1"></script>
-    <script src="/static/management.js"></script>
+    <script src="/static/components.js?v=1.9.0"></script>
+    <script src="/static/hub-ui.js?v=1.9.0"></script>
+    <script src="/static/management.js?v=1.9.0"></script>
 </body>
 </html>

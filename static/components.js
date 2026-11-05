@@ -47,12 +47,11 @@
                 ${link('/', '00', 'Все сервисы')}
                 ${link('/nomenclature', '01', 'Номенклатура')}
                 ${link('/orders', '02', 'Заказы по точкам')}
-                ${link('/management', '03', 'Управление')}
-                ${isAdmin ? link('/timesheet', '04', 'Учёт времени') : ''}
-                ${isAdmin ? link('/employees', '05', 'Сотрудники', ['/employee']) : ''}
-                ${isAdmin
-                    ? `<div class="side-caption">Система</div>${link('/admin', '06', 'Админ-панель')}`
-                    : ''}
+                ${isAdmin ? link('/timesheet', '03', 'Учёт времени') : ''}
+                ${isAdmin ? link('/employees', '04', 'Сотрудники', ['/employee']) : ''}
+                <div class="side-caption">Система</div>
+                ${link('/management', '05', 'Продукция')}
+                ${isAdmin ? link('/admin', '06', 'Админ-панель') : ''}
             </nav>
             <div class="side-user">
                 ${currentUser ? `

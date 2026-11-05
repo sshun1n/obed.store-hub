@@ -25,13 +25,19 @@ class ProductBase(BaseModel):
 
 class Product(ProductBase):
     id: int
+    display_name: Optional[str] = None
+    composition: Optional[str] = None
+    barcode: Optional[str] = None
     categories: List[Category] = []
 
     class Config:
         from_attributes = True
 
-class ProductCategoriesUpdate(BaseModel):
-    category_ids: List[int]
+class ProductUpdate(BaseModel):
+    display_name: Optional[str] = None
+    composition: Optional[str] = None
+    barcode: Optional[str] = None
+    category_ids: List[int] = []
 
 # --- СХЕМЫ ПОЛЬЗОВАТЕЛЕЙ ---
 

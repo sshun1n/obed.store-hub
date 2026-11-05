@@ -55,7 +55,12 @@ class Product(Base):
     __tablename__ = "products"
     
     id = Column(Integer, primary_key=True, index=True)
+    # Полное название из заголовка колонки таблицы — ключ сопоставления, не редактируется
     name_from_sheet = Column(String, unique=True, index=True, nullable=False)
+    # Правки из карточки. Пусто — показываем то, что разобрано из таблицы
+    display_name = Column(String, nullable=True)
+    composition = Column(String, nullable=True)
+    barcode = Column(String(13), unique=True, nullable=True)  # EAN-13
 
     categories = relationship("Category", secondary="product_category_map", back_populates="products")
 
@@ -237,6 +242,9 @@ def _add_missing_columns():
                     default = _sql_default(col.default.arg)
                 conn.execute(text(f"ALTER TABLE {table.name} ADD COLUMN {col.name} {ddl_type}{default}"))
                 logger.info(f"Миграция: добавлена колонка {table.name}.{col.name}")
+                # ADD COLUMN выше уникальность не создаёт
+                if col.unique:
+                    conn.execute(text(f"CREATE UNIQUE INDEX uq_{table.name}_{col.name} ON {table.name} ({col.name})"))
 
 def init_db():
     # Создает недостающие таблицы и колонки (идемпотентно)

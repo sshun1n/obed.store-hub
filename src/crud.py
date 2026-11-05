@@ -65,12 +65,21 @@ def sync_products(db: Session, names: List[str]) -> int:
     db.commit()
     return added_count
 
-def update_product_categories(db: Session, product_id: int, category_ids: List[int]) -> Optional[database.Product]:
-    db_product = db.query(database.Product).filter(database.Product.id == product_id).first()
+def get_product(db: Session, product_id: int) -> Optional[database.Product]:
+    return db.query(database.Product).filter(database.Product.id == product_id).first()
+
+def get_product_by_barcode(db: Session, barcode: str) -> Optional[database.Product]:
+    return db.query(database.Product).filter(database.Product.barcode == barcode).first()
+
+def update_product(db: Session, product_id: int, display_name: Optional[str], composition: Optional[str],
+                   barcode: Optional[str], category_ids: List[int]) -> Optional[database.Product]:
+    db_product = get_product(db, product_id)
     if not db_product:
         return None
-    categories = db.query(database.Category).filter(database.Category.id.in_(category_ids)).all()
-    db_product.categories = categories
+    db_product.display_name = display_name
+    db_product.composition = composition
+    db_product.barcode = barcode
+    db_product.categories = db.query(database.Category).filter(database.Category.id.in_(category_ids)).all()
     db.commit()
     db.refresh(db_product)
     return db_product
