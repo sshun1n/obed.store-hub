@@ -695,7 +695,7 @@ thead th:nth-child(2), tbody td:nth-child(2) { width: 22%; text-align: center; }
 
 .product-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, auto) 13ch;
+    grid-template-columns: minmax(0, 1fr) 13ch;
     align-items: center;
     gap: 16px;
     padding: 11px 16px;
@@ -709,8 +709,6 @@ thead th:nth-child(2), tbody td:nth-child(2) { width: 22%; text-align: center; }
 .product-row:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
 
 .product-name { font-weight: 600; font-size: 0.88rem; transition: color 0.12s; }
-.product-tags { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
-.product-tags .cat-tag { margin-right: 0; }
 .product-barcode { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); text-align: right; }
 
 .tag {
@@ -773,6 +771,13 @@ thead th:nth-child(2), tbody td:nth-child(2) { width: 22%; text-align: center; }
     padding: 20px;
 }
 .modal.open { display: flex; }
+
+/* Под открытым окном страница не листается. Место под полосу прокрутки
+   зарезервировано всегда, чтобы контент не дёргался при открытии */
+html { scrollbar-gutter: stable; }
+html:has(.modal.open) { overflow: hidden; }
+.modal-content { overscroll-behavior: contain; }
+.modal-content:focus { outline: none; }
 
 .modal-content {
     background: var(--card);
@@ -1242,7 +1247,6 @@ textarea.styled-text-input { resize: vertical; min-height: 64px; line-height: 1.
     .pc-footer { padding: 14px 20px; flex-wrap: wrap; }
     .pc-error { flex-basis: 100%; }
     .product-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
-    .product-tags { justify-content: flex-start; }
     .product-barcode { text-align: left; }
     .product-barcode:empty { display: none; }
 }

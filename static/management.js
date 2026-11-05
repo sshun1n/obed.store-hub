@@ -183,18 +183,12 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        productListContainer.innerHTML = filtered.map(product => {
-            const tags = product.categories.length
-                ? product.categories.map(cat => `<span class="cat-tag">${esc(cat.name)}</span>`).join('')
-                : '<span class="cat-tag cat-tag-warn">нет категории</span>';
-            return `
-                <div class="product-row" data-id="${product.id}" role="button" tabindex="0">
-                    <span class="product-name">${esc(productLabel(product).name)}</span>
-                    <span class="product-tags">${tags}</span>
-                    <span class="product-barcode">${esc(product.barcode || '')}</span>
-                </div>
-            `;
-        }).join('');
+        productListContainer.innerHTML = filtered.map(product => `
+            <div class="product-row" data-id="${product.id}" role="button" tabindex="0">
+                <span class="product-name">${esc(productLabel(product).name)}</span>
+                <span class="product-barcode">${esc(product.barcode || '')}</span>
+            </div>
+        `).join('');
     }
 
     // --- 3. Карточка товара ---
@@ -317,6 +311,8 @@ document.addEventListener('DOMContentLoaded', () => {
         draft = null;
         renderCard();
         openModal(productModal);
+        productCard.scrollTop = 0;
+        productCard.focus(); // клавиатура работает с окном, а не со списком под ним
     }
 
     function startEdit() {
