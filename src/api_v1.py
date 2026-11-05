@@ -1,5 +1,5 @@
 import re
-from fastapi import APIRouter, Depends, HTTPException, status, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Response
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -7,7 +7,7 @@ from typing import List
 from datetime import timedelta
 from urllib.parse import quote
 
-from src import barcodes, crud, schemas, auth
+from src import barcodes, crud, schemas, auth, sheet_sync
 from src.database import get_db
 
 # Импорт для работы с Google Sheets напрямую через API
@@ -131,11 +131,6 @@ def delete_category(category_id: int, db: Session = Depends(get_db), admin: sche
 def read_products(db: Session = Depends(get_db)):
     return crud.get_products(db)
 
-@router.post("/products/sync", tags=["Продукты"])
-def sync_products(names: List[str], db: Session = Depends(get_db), admin: schemas.User = Depends(auth.admin_only)):
-    added = crud.sync_products(db, names)
-    return {"status": "ok", "added_count": added}
-
 @router.get("/products/barcode/generate", tags=["Продукты"])
 def generate_barcode(db: Session = Depends(get_db), admin: schemas.User = Depends(auth.admin_only)):
     """Подбирает свободный внутренний EAN-13. В базу не пишет: код сохранится вместе с карточкой."""
@@ -181,6 +176,33 @@ def product_barcode_png(product_id: int, download: bool = False, db: Session = D
         headers["Content-Disposition"] = f"attachment; filename*=UTF-8''{quote(safe_name)}.png"
     return Response(barcodes.render_png(product.barcode), media_type="image/png", headers=headers)
 
+# --- СИНХРОНИЗАЦИЯ С ТАБЛИЦЕЙ ---
+
+@router.get("/sync/status", tags=["Синхронизация"])
+def sync_status(db: Session = Depends(get_db), user: schemas.User = Depends(auth.get_current_user)):
+    return sheet_sync.get_status(db)
+
+# Кнопка есть у всех: менеджеру тоже нужны свежие заказы, а данные здесь только читаются из таблицы
+@router.post("/sync", tags=["Синхронизация"])
+def sync_now(db: Session = Depends(get_db), user: schemas.User = Depends(auth.get_current_user)):
+    if not crud.get_active_google_config(db):
+        raise HTTPException(status_code=400, detail="Настройте таблицу в админ-панели.")
+    added = sheet_sync.run_sync()
+    db.expire_all()  # синхронизация шла в своей сессии
+    return {"added": added, **sheet_sync.get_status(db)}
+
+@router.put("/sync/settings", tags=["Синхронизация"])
+def update_sync_settings(data: schemas.SyncSettingsUpdate, db: Session = Depends(get_db), admin: schemas.User = Depends(auth.admin_only)):
+    if data.start_time >= data.end_time:
+        raise HTTPException(status_code=400, detail="Начало должно быть раньше конца")
+    settings = sheet_sync.get_settings(db)
+    settings.enabled = data.enabled
+    settings.interval_minutes = data.interval_minutes
+    settings.start_time = data.start_time
+    settings.end_time = data.end_time
+    db.commit()
+    return sheet_sync.get_status(db)
+
 # --- УПРАВЛЕНИЕ GOOGLE ТАБЛИЦАМИ ---
 
 @router.post("/google/inspect", tags=["Администрирование: Google"])
@@ -210,10 +232,11 @@ def create_google_config(config: schemas.GoogleConfigCreate, db: Session = Depen
     return crud.create_google_config(db, config)
 
 @router.put("/google/configs/{config_id}/activate", response_model=schemas.GoogleConfig, tags=["Администрирование: Google"])
-def activate_google_config(config_id: int, db: Session = Depends(get_db), admin: schemas.User = Depends(auth.admin_only)):
+def activate_google_config(config_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db), admin: schemas.User = Depends(auth.admin_only)):
     config = crud.activate_google_config(db, config_id)
     if not config:
         raise HTTPException(status_code=404, detail="Конфигурация не найдена")
+    background_tasks.add_task(sheet_sync.run_sync)  # снимок прежней таблицы больше не подходит
     return config
 
 @router.delete("/google/configs/{config_id}", tags=["Администрирование: Google"])

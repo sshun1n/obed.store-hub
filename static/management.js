@@ -9,7 +9,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const productListContainer = document.getElementById('productList');
     const productSearchInput = document.getElementById('productSearchInput');
     const productCategoryFilter = document.getElementById('productCategoryFilter');
-    const productStatusMsg = document.getElementById('productStatusMsg');
     const categoryContextMenu = document.getElementById('categoryContextMenu');
 
     const productModal = document.getElementById('productModal');
@@ -45,27 +44,6 @@ document.addEventListener('DOMContentLoaded', () => {
     async function loadProducts() {
         allProducts = await api('/api/v1/products/');
         renderProductList();
-    }
-
-    // Справочник показываем сразу из базы, таблицу сверяем в фоне: Google отвечает
-    // секундами. Список обновляется, только если в таблице появились новые товары.
-    // Синхронизировать может только админ
-    async function syncProductsInBackground() {
-        try {
-            const nomData = await api('/api/nomenclature');
-            const names = nomData.data.map(item => item.full_name);
-            const { added_count: added } = await api('/api/v1/products/sync', { method: 'POST', body: names });
-            productStatusMsg.innerText = '';
-            productStatusMsg.classList.remove('ts-warn');
-            if (added > 0) {
-                await loadProducts();
-                toast(`Из таблицы добавлено новых товаров: ${added}`);
-            }
-        } catch (error) {
-            console.error('Ошибка синхронизации продуктов:', error);
-            productStatusMsg.innerText = 'Таблица недоступна, новые товары не подтянуты';
-            productStatusMsg.classList.add('ts-warn');
-        }
     }
 
     // --- 2. Категории и список товаров ---
@@ -540,7 +518,13 @@ document.addEventListener('DOMContentLoaded', () => {
             productCategoryFilter.value = 'none';
         }
 
-        // Список не ждёт ни роль, ни таблицу
+        // Новые товары из таблицы добавляет синхронизация на сервере
+        document.addEventListener('hub:synced', (e) => {
+            loadProducts().catch(err => console.error('Ошибка загрузки справочника:', err));
+            if (e.detail.added > 0) toast(`Из таблицы добавлено новых товаров: ${e.detail.added}`);
+        });
+
+        // Список не ждёт определения роли
         loadProducts().catch((err) => {
             console.error('Ошибка загрузки справочника:', err);
             productListContainer.innerHTML = '<p class="ts-warn product-list-empty">Не удалось загрузить справочник</p>';
@@ -555,7 +539,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         // Роль стала известна: если карточку уже открыли, показываем кнопку правки
         if (cardProduct && !cardEditing) renderCard();
-        if (isAdmin) syncProductsInBackground();
     }
 
     init();

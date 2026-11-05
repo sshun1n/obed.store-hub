@@ -99,9 +99,7 @@ class GoogleSheetClient:
 # --- СЕРВИС НОМЕНКЛАТУРЫ ---
 
 class NomenclatureService:
-    """Логика обработки номенклатуры и заказов из таблиц."""
-    def __init__(self, sheet_client: GoogleSheetClient) -> None:
-        self.client: GoogleSheetClient = sheet_client
+    """Разбор строк листа: номенклатура и заказы. Сам в Google не ходит."""
 
     def _find_header_row(self, rows: List[List[str]]) -> Tuple[int, int, int]:
         """Ищет строку заголовков (дату и адрес)."""
@@ -119,9 +117,8 @@ class NomenclatureService:
     def _parse_dish_name(self, full_name: str) -> Tuple[str, str]:
         return parse_dish_name(full_name)
 
-    def get_aggregated_nomenclature(self, spreadsheet_id: str, sheet_name: str) -> List[Dict[str, Any]]:
+    def get_aggregated_nomenclature(self, rows: List[List[Any]]) -> List[Dict[str, Any]]:
         """Агрегирует количество всех блюд из таблицы."""
-        rows: List[List[Any]] = self.client.get_worksheet_data(spreadsheet_id, sheet_name)
         if len(rows) < 2: return []
 
         header_idx, _, addr_idx = self._find_header_row(rows)
@@ -154,9 +151,8 @@ class NomenclatureService:
         sorted_items = sorted(nomenclature_map.values(), key=lambda x: x['quantity'], reverse=True)
         return sorted_items
 
-    def get_orders_by_date(self, spreadsheet_id: str, sheet_name: str, target_date: str) -> List[Dict[str, Any]]:
+    def get_orders_by_date(self, rows: List[List[Any]], target_date: str) -> List[Dict[str, Any]]:
         """Возвращает детализацию заказов по адресам на дату."""
-        rows: List[List[Any]] = self.client.get_worksheet_data(spreadsheet_id, sheet_name)
         if len(rows) < 2: return []
 
         header_idx, date_col, addr_col = self._find_header_row(rows)

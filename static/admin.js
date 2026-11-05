@@ -174,6 +174,48 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    // --- 3. АВТОСИНХРОНИЗАЦИЯ ---
+
+    const syncForm = document.getElementById('syncSettingsForm');
+    const syncEnabled = document.getElementById('syncEnabled');
+    const syncInterval = document.getElementById('syncInterval');
+    const syncStart = document.getElementById('syncStart');
+    const syncEnd = document.getElementById('syncEnd');
+
+    function showSyncSettings(auto) {
+        syncEnabled.checked = auto.enabled;
+        syncStart.value = auto.start_time;
+        syncEnd.value = auto.end_time;
+        // Значение могли задать не из этого списка
+        if (![...syncInterval.options].some(o => o.value === String(auto.interval_minutes))) {
+            syncInterval.add(new Option(`${auto.interval_minutes} минут`, auto.interval_minutes));
+        }
+        syncInterval.value = String(auto.interval_minutes);
+    }
+
+    syncForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        try {
+            const status = await Hub.api('/api/v1/sync/settings', {
+                method: 'PUT',
+                body: {
+                    enabled: syncEnabled.checked,
+                    interval_minutes: parseInt(syncInterval.value, 10),
+                    start_time: syncStart.value,
+                    end_time: syncEnd.value,
+                },
+            });
+            showSyncSettings(status.auto);
+            Hub.toast('Расписание сохранено');
+        } catch (err) {
+            Hub.toast(err.message, 'error');
+        }
+    });
+
+    Hub.api('/api/v1/sync/status')
+        .then(status => showSyncSettings(status.auto))
+        .catch(err => console.error('Не удалось загрузить расписание:', err));
+
     renderUsers();
     renderConfigs();
 });

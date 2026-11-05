@@ -39,6 +39,14 @@ class ProductUpdate(BaseModel):
     barcode: Optional[str] = None
     category_ids: List[int] = []
 
+# --- СХЕМЫ СИНХРОНИЗАЦИИ ---
+
+class SyncSettingsUpdate(BaseModel):
+    enabled: bool
+    interval_minutes: int = Field(ge=5, le=720)
+    start_time: str = Field(pattern=r'^([01]\d|2[0-3]):[0-5]\d$')
+    end_time: str = Field(pattern=r'^([01]\d|2[0-3]):[0-5]\d$')
+
 # --- СХЕМЫ ПОЛЬЗОВАТЕЛЕЙ ---
 
 class UserBase(BaseModel):

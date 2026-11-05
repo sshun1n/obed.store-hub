@@ -118,14 +118,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/api/nomenclature');
             const result = await response.json();
             originalNomenclatureData = result.data || [];
-            if (originalNomenclatureData.length > 0) {
-                loading.style.display = 'none';
-                table.style.display = 'table';
-                renderNomenclatureTable();
-            } else {
-                loading.innerText = "Данные не найдены.";
+            const hasData = originalNomenclatureData.length > 0;
+            loading.style.display = hasData ? 'none' : 'block';
+            table.style.display = hasData ? 'table' : 'none';
+            if (hasData) renderNomenclatureTable();
+            else {
+                document.getElementById('alertContainer').innerHTML = '';
+                loading.innerText = response.ok ? "Данных пока нет. Нажмите «Синхронизировать»." : (result.detail || "Ошибка загрузки данных.");
             }
-        } catch (err) { loading.innerText = "Ошибка загрузки данных."; }
+        } catch (err) {
+            loading.style.display = 'block';
+            loading.innerText = "Ошибка загрузки данных.";
+        }
     }
 
     async function fetchCategories() {
@@ -174,6 +178,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function initNomenclaturePage() {
         setDate('today'); loadNomenclature(); fetchCategories();
+        document.addEventListener('hub:synced', loadNomenclature);
         document.getElementById('todayBtn').addEventListener('click', () => setDate('today'));
         document.getElementById('tomorrowBtn').addEventListener('click', () => setDate('tomorrow'));
         document.getElementById('pdfBtn').addEventListener('click', downloadPDF);
@@ -221,8 +226,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const container = document.getElementById('ordersContainer'), dateInput = document.getElementById('orderDate');
         if (!dateInput.value) return;
         const apiDate = formatDateForApi(dateInput.value);
-        container.innerHTML = '<div class="empty-state"><h3>Загрузка...</h3></div>';
-        
+
         // Массив пастельных цветов из CSS
         const pointColors = [
             'var(--point-1)', 'var(--point-2)', 'var(--point-3)', 'var(--point-4)', 'var(--point-5)',
@@ -232,6 +236,10 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch(`/api/orders?date=${apiDate}`);
             const result = await response.json();
+            if (!response.ok) {
+                container.innerHTML = `<div class="empty-state"><h3>${result.detail || 'Ошибка загрузки.'}</h3></div>`;
+                return;
+            }
             if (!result.data || result.data.length === 0) {
                 container.innerHTML = `<div class="empty-state"><h3>Нет заказов на ${apiDate}</h3></div>`;
                 return;
@@ -259,8 +267,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function initOrdersPage() {
         setDate('today'); loadOrders();
+        document.addEventListener('hub:synced', loadOrders);
         document.getElementById('orderDate').addEventListener('change', loadOrders);
-        document.getElementById('refreshBtn').addEventListener('click', loadOrders);
         document.getElementById('todayBtn').addEventListener('click', () => { setDate('today'); loadOrders(); });
         document.getElementById('tomorrowBtn').addEventListener('click', () => { setDate('tomorrow'); loadOrders(); });
     }

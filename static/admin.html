@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=1.9.2">
+    <link rel="stylesheet" href="/static/style.css?v=1.9.3">
 </head>
 <body>
     <div class="container">
@@ -64,11 +64,42 @@
                 <hr class="form-divider">
                 <h3 class="form-subhead">Подключённые таблицы</h3>
                 <div id="googleConfigList"></div>
+
+                <hr class="form-divider">
+                <h3 class="form-subhead">Автосинхронизация</h3>
+                <form id="syncSettingsForm" class="form-layout">
+                    <label class="filter-item sync-settings-switch">
+                        <input type="checkbox" id="syncEnabled">
+                        <span>Обновлять данные из таблицы по расписанию</span>
+                    </label>
+                    <div class="form-group">
+                        <label for="syncInterval" class="control-label">Интервал</label>
+                        <select id="syncInterval" class="styled-text-input">
+                            <option value="15">15 минут</option>
+                            <option value="30">30 минут</option>
+                            <option value="60">1 час</option>
+                            <option value="120">2 часа</option>
+                        </select>
+                    </div>
+                    <div class="form-grid-2">
+                        <div class="form-group">
+                            <label for="syncStart" class="control-label">С</label>
+                            <input type="time" id="syncStart" class="styled-date-input" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="syncEnd" class="control-label">До</label>
+                            <input type="time" id="syncEnd" class="styled-date-input" required>
+                        </div>
+                    </div>
+                    <span class="field-hint">Время московское. Вне этих часов данные обновляются только кнопкой «Синхронизировать» на страницах.</span>
+                    <button type="submit" class="btn btn-primary" style="align-self: flex-start;">Сохранить</button>
+                </form>
             </div>
         </div>
     </div>
 
     <script src="/static/components.js?v=1.9.0"></script>
-    <script src="/static/admin.js"></script>
+    <script src="/static/hub-ui.js?v=1.9.0"></script>
+    <script src="/static/admin.js?v=1.9.3"></script>
 </body>
 </html>

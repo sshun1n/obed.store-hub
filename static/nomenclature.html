@@ -8,14 +8,17 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=1.9.2">
+    <link rel="stylesheet" href="/static/style.css?v=1.9.3">
 </head>
 <body>
     <div class="container">
-        <header class="page-header">
-            <span class="eyebrow">Сервис 01</span>
-            <h1>Номенклатура</h1>
-            <p class="subtitle">Сводный заказ на производство по всем точкам.</p>
+        <header class="page-header page-head-row">
+            <div>
+                <span class="eyebrow">Сервис 01</span>
+                <h1>Номенклатура</h1>
+                <p class="subtitle">Сводный заказ на производство по всем точкам.</p>
+            </div>
+            <div id="syncBar" class="sync-bar"></div>
         </header>
 
         <div id="alertContainer"></div>
@@ -45,9 +48,7 @@
         </section>
 
         <section class="table-wrapper">
-            <div id="loading" style="padding: 56px; text-align: center; color: var(--muted); font-family: var(--mono); font-size: 0.8rem;">
-                Загрузка данных…
-            </div>
+            <div id="loading" style="padding: 56px; text-align: center; color: var(--muted); font-family: var(--mono); font-size: 0.8rem;"></div>
             <table id="dataTable" style="display: none;">
                 <thead>
                     <tr>
@@ -75,6 +76,7 @@
     </div>
 
     <script src="/static/components.js?v=1.9.0"></script>
-    <script src="/static/app.js?v=2.0.0"></script>
+    <script src="/static/sync.js?v=1.9.3"></script>
+    <script src="/static/app.js?v=2.1.0"></script>
 </body>
 </html>

@@ -3,7 +3,7 @@ import logging
 from dotenv import load_dotenv
 from sqlalchemy import (
     create_engine, Column, Integer, String, DateTime, ForeignKey, Boolean,
-    Date, Float, UniqueConstraint, inspect, text
+    Date, Float, Text, UniqueConstraint, inspect, text
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
@@ -82,6 +82,29 @@ class GoogleConfig(Base):
     sheet_name = Column(String, nullable=False)
     is_active = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+class SheetSnapshot(Base):
+    # Последняя прочитанная копия листа (одна строка). Страницы читают её, а не Google
+    __tablename__ = "sheet_snapshots"
+
+    id = Column(Integer, primary_key=True)
+    spreadsheet_id = Column(String, nullable=True)
+    sheet_name = Column(String, nullable=True)
+    rows_json = Column(Text, nullable=True)
+    # Местное время. synced_at — последняя удачная синхронизация, last_attempt_at — последняя попытка
+    synced_at = Column(DateTime, nullable=True)
+    last_attempt_at = Column(DateTime, nullable=True)
+    last_error = Column(String, nullable=True)
+
+class SyncSettings(Base):
+    # Расписание автосинхронизации (одна строка), время местное, ЧЧ:ММ
+    __tablename__ = "sync_settings"
+
+    id = Column(Integer, primary_key=True)
+    enabled = Column(Boolean, default=True, nullable=False)
+    interval_minutes = Column(Integer, default=30, nullable=False)
+    start_time = Column(String, default="08:00", nullable=False)
+    end_time = Column(String, default="17:00", nullable=False)
 
 # --- МОДЕЛИ УЧЁТА РАБОЧЕГО ВРЕМЕНИ ---
 

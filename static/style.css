@@ -1166,6 +1166,31 @@ textarea.styled-text-input { resize: vertical; min-height: 64px; line-height: 1.
 .cell-soft { color: var(--ink-soft); }
 
 /* ============================================================
+   Синхронизация с таблицей
+   ============================================================ */
+.page-head-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 14px 24px;
+    flex-wrap: wrap;
+}
+.page-head-row .subtitle { max-width: none; }
+
+.sync-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.sync-text { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.sync-time { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); cursor: default; }
+.sync-error { font-family: var(--mono); font-size: 0.68rem; color: var(--red); }
+.sync-error:empty { display: none; }
+.sync-btn:disabled { color: var(--muted); border-color: var(--line); cursor: wait; }
+
+.sync-settings-switch { padding: 0; }
+
+@media (max-width: 900px) {
+    .sync-text { align-items: flex-start; }
+}
+
+/* ============================================================
    Карточка товара
    ============================================================ */
 .modal-content.product-card { max-width: 880px; padding: 0; }

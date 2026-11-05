@@ -10,10 +10,7 @@ from dotenv import load_dotenv
 from sqlalchemy.orm import Session
 
 # Импорт внутренних модулей
-from src.service import (
-    AppConfig, GoogleSheetClient, NomenclatureService,
-    ConfigurationError, SheetAPIError, ServiceError
-)
+from src import sheet_sync
 from src.report_generator import ReportGenerator
 import src.api_v1 as api_v1
 import src.api_timesheet as api_timesheet
@@ -55,15 +52,12 @@ async def startup_event() -> None:
     except Exception as e:
         logger.error(f"Ошибка миграции БД: {e}", exc_info=True)
     try:
-        config = AppConfig()
-        config.validate()
-        google_client = GoogleSheetClient(config)
-        services['nomenclature'] = NomenclatureService(google_client)
         reports_dir = os.path.join(BASE_DIR, "reports")
         services['report_gen'] = ReportGenerator(output_dir=reports_dir)
         logger.info("Сервисы инициализированы")
     except Exception as e:
         logger.critical(f"Ошибка старта: {e}", exc_info=True)
+    sheet_sync.start_scheduler()
 
 # --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 
@@ -83,10 +77,11 @@ def get_active_config_or_raise(db: Session):
 # --- ЭНДПОИНТЫ ДАННЫХ ---
 
 @app.get("/api/nomenclature", tags=["Данные"])
-async def get_nomenclature_json(db: Session = Depends(get_db), user: Any = Depends(auth.get_current_user)):
+def get_nomenclature_json(db: Session = Depends(get_db), user: Any = Depends(auth.get_current_user)):
     config = get_active_config_or_raise(db)
     try:
-        data = services['nomenclature'].get_aggregated_nomenclature(config.spreadsheet_id, config.sheet_name)
+        rows, _ = sheet_sync.get_rows(db, config)
+        data = sheet_sync.nomenclature.get_aggregated_nomenclature(rows or [])
         db_products = db.query(Product).all()
         product_categories_map = {p.name_from_sheet: [c.name for c in p.categories] for p in db_products}
         enriched = []
@@ -97,10 +92,11 @@ async def get_nomenclature_json(db: Session = Depends(get_db), user: Any = Depen
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/orders", tags=["Данные"])
-async def get_orders_json(date: str, db: Session = Depends(get_db), user: Any = Depends(auth.get_current_user)):
+def get_orders_json(date: str, db: Session = Depends(get_db), user: Any = Depends(auth.get_current_user)):
     config = get_active_config_or_raise(db)
     try:
-        orders = services['nomenclature'].get_orders_by_date(config.spreadsheet_id, config.sheet_name, date)
+        rows, _ = sheet_sync.get_rows(db, config)
+        orders = sheet_sync.nomenclature.get_orders_by_date(rows or [], date)
         return {"date": date, "count": len(orders), "data": orders}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -118,7 +114,8 @@ async def generate_pdf_report(
 ):
     config = get_active_config_or_raise(db)
     try:
-        data = services['nomenclature'].get_aggregated_nomenclature(config.spreadsheet_id, config.sheet_name)
+        rows, _ = sheet_sync.get_rows(db, config)
+        data = sheet_sync.nomenclature.get_aggregated_nomenclature(rows or [])
         if not data: raise HTTPException(status_code=404, detail="Нет данных")
         
         db_products = db.query(Product).all()
