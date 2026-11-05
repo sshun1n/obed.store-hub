@@ -122,7 +122,7 @@ h2 { font-weight: 700; letter-spacing: -0.015em; }
     letter-spacing: -0.02em;
 }
 .side-logo:hover { color: #fff; }
-.side-logo img { width: 30px; height: 30px; border-radius: 8px; display: block; }
+.side-logo svg { width: 30px; height: 30px; flex-shrink: 0; display: block; }
 .side-logo b { font-weight: 700; }
 .side-logo b span { color: var(--red); }
 .side-logo small {
@@ -157,7 +157,8 @@ h2 { font-weight: 700; letter-spacing: -0.015em; }
     text-decoration: none;
     font-size: 0.93rem;
     font-weight: 500;
-    transition: color 0.15s, background 0.15s;
+    position: relative;
+    transition: color 0.2s;
 }
 .side-link .side-num {
     font-family: var(--mono);
@@ -167,12 +168,23 @@ h2 { font-weight: 700; letter-spacing: -0.015em; }
 }
 .side-link:hover { color: #fff; }
 .side-link:hover .side-num { color: var(--red); }
-.side-link.active {
-    color: #fff;
-    background: #1F1F23;
-    border-left-color: var(--red);
-}
+.side-link.active { color: #fff; }
 .side-link.active .side-num { color: var(--red); }
+
+/* Фон и красная полоса активного пункта. Фон полупрозрачный: при смене страницы
+   маркер проходит поверх текста меню и не должен его закрывать */
+.side-nav { position: relative; }
+.side-marker {
+    position: absolute;
+    left: 0;
+    right: 0;
+    opacity: 0;
+    background: rgba(255, 255, 255, 0.04);
+    border-left: 2px solid var(--red);
+    pointer-events: none;
+    transition: top 0.28s cubic-bezier(0.22, 0.8, 0.3, 1), height 0.28s cubic-bezier(0.22, 0.8, 0.3, 1);
+}
+.side-marker.visible { opacity: 1; }
 
 .side-user {
     margin-top: auto;
@@ -784,14 +796,28 @@ thead th:nth-child(2), tbody td:nth-child(2) { width: 22%; text-align: center; }
 .modal {
     position: fixed;
     inset: 0;
-    background: rgba(23, 23, 26, 0.45);
-    display: none;
+    background: rgba(23, 23, 26, 0.38);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    display: flex;
     justify-content: center;
     align-items: center;
     z-index: 3000;
     padding: 20px;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, visibility 0s linear 0.2s;
 }
-.modal.open { display: flex; }
+.modal.open {
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 0.22s ease, visibility 0s;
+}
+.modal > .modal-content {
+    transform: translateY(12px) scale(0.985);
+    transition: transform 0.26s cubic-bezier(0.22, 0.8, 0.3, 1);
+}
+.modal.open > .modal-content { transform: none; }
 
 /* Под открытым окном страница не листается. Место под полосу прокрутки
    зарезервировано всегда, чтобы контент не дёргался при открытии */
@@ -1283,6 +1309,7 @@ textarea.styled-text-input { resize: vertical; min-height: 64px; line-height: 1.
 .pc-nutrition thead th { font-family: var(--mono); font-size: 0.64rem; font-weight: 600; color: var(--muted); }
 .pc-nutrition tbody th { font-weight: 500; text-align: left; padding-left: 0; }
 .pc-nutrition td { font-family: var(--mono); }
+.pc-nutrition tbody tr:last-child th { border-bottom: none; }
 .pc-head-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .pc-head-actions .icon-btn { height: 32px; width: 32px; }
 
@@ -1590,6 +1617,47 @@ textarea.styled-text-input { resize: vertical; min-height: 64px; line-height: 1.
     .item { flex-wrap: wrap; }
     .item-side { width: 100%; justify-content: flex-end; }
     .toast-host { left: 16px; right: 16px; align-items: stretch; }
+}
+
+/* ============================================================
+   Смена страниц
+   Меню остаётся на месте, маркер едет к новому пункту, контент проявляется.
+   ============================================================ */
+@view-transition { navigation: auto; }
+
+.sidebar { view-transition-name: sidebar; }
+.side-marker { view-transition-name: side-marker; }
+.topbar { view-transition-name: topbar; }
+.container { view-transition-name: page; }
+
+::view-transition-group(*) {
+    animation-duration: 0.28s;
+    animation-timing-function: cubic-bezier(0.22, 0.8, 0.3, 1);
+}
+::view-transition-old(sidebar), ::view-transition-new(sidebar) { animation-duration: 0.2s; }
+
+/* Фон страницы одинаковый: переход по нему не нужен */
+::view-transition-old(root), ::view-transition-old(topbar) { display: none; }
+::view-transition-new(root), ::view-transition-new(topbar) { animation: none; }
+
+::view-transition-group(page) { animation: none; }
+::view-transition-old(page), ::view-transition-new(page) { mix-blend-mode: normal; }
+::view-transition-old(page) { animation: page-out 0.12s ease both; }
+::view-transition-new(page) { animation: page-in 0.28s cubic-bezier(0.22, 0.8, 0.3, 1) 0.05s both; }
+
+@keyframes page-out { to { opacity: 0; } }
+@keyframes page-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: none; }
+}
+
+/* Браузеры без плавной смены страниц */
+.no-vt .container { animation: page-in 0.28s cubic-bezier(0.22, 0.8, 0.3, 1) backwards; }
+
+@media (prefers-reduced-motion: reduce) {
+    @view-transition { navigation: none; }
+    .no-vt .container { animation: none; }
+    .modal, .modal.open, .modal > .modal-content, .side-marker { transition: none; }
 }
 
 /* ============================================================

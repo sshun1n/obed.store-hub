@@ -191,7 +191,16 @@ async def serve_html_pages(page: str, user: Optional[database.User] = Depends(au
         return await protected_file_response(f"{page}.html", user)
     raise HTTPException(status_code=404)
 
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+class VersionedStaticFiles(StaticFiles):
+    # Файлы с ?v= при изменении получают новый адрес, поэтому браузер хранит их без
+    # повторной проверки: иначе каждый переход ждёт ответов сервера на стили и скрипты
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        if b"v=" in scope.get("query_string", b""):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
+
+app.mount("/static", VersionedStaticFiles(directory=STATIC_DIR), name="static")
 
 @app.get("/{file_name:path}", include_in_schema=False)
 async def catch_all_static(file_name: str):

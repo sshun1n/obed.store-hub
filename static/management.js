@@ -485,8 +485,13 @@ document.addEventListener('DOMContentLoaded', () => {
             cardIsNew = false;
             return;
         }
+        // Закрываем без перерисовки: форма растворяется, а не сменяется карточкой
+        if (thenClose) {
+            productModal.removeAttribute('data-keep-open');
+            closeModal(productModal);
+            return;
+        }
         renderCard();
-        if (thenClose) closeModal(productModal);
     }
 
     // Числовые поля черновика. Ошибка ввода — исключение с понятным текстом

@@ -108,7 +108,7 @@ window.Hub = (() => {
     function confirmDialog({ title, text, okText = 'Удалить', danger = true }) {
         return new Promise((resolve) => {
             const modal = document.createElement('div');
-            modal.className = 'modal open';
+            modal.className = 'modal';
             modal.innerHTML = `
                 <div class="modal-content confirm-modal">
                     <h2 class="card-title-small">${esc(title)}</h2>
@@ -118,7 +118,12 @@ window.Hub = (() => {
                         <button type="button" class="btn ${danger ? 'btn-danger' : 'btn-primary'}" data-act="yes">${esc(okText)}</button>
                     </div>
                 </div>`;
-            const finish = (val) => { modal.remove(); document.removeEventListener('keydown', onKey); resolve(val); };
+            const finish = (val) => {
+                closeModal(modal);
+                setTimeout(() => modal.remove(), 220); // окно успевает раствориться
+                document.removeEventListener('keydown', onKey);
+                resolve(val);
+            };
             const onKey = (ev) => { if (ev.key === 'Escape') finish(false); };
             modal.addEventListener('click', (ev) => {
                 if (ev.target === modal) return finish(false);
@@ -127,6 +132,8 @@ window.Hub = (() => {
             });
             document.addEventListener('keydown', onKey);
             document.body.appendChild(modal);
+            void modal.offsetWidth; // закрытое состояние применено: появление будет плавным
+            modal.classList.add('open');
             modal.querySelector('[data-act="yes"]').focus();
         });
     }
