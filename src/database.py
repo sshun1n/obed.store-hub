@@ -55,8 +55,9 @@ class Product(Base):
     __tablename__ = "products"
     
     id = Column(Integer, primary_key=True, index=True)
-    # Полное название из заголовка колонки таблицы — ключ сопоставления, не редактируется
-    name_from_sheet = Column(String, unique=True, index=True, nullable=False)
+    # Полное название из заголовка колонки таблицы — ключ сопоставления, не редактируется.
+    # У товаров, добавленных вручную, пусто: с таблицей они не связаны
+    name_from_sheet = Column(String, unique=True, index=True, nullable=True)
     # Правки из карточки. Пусто — показываем то, что разобрано из таблицы
     display_name = Column(String, nullable=True)
     composition = Column(String, nullable=True)
@@ -280,10 +281,20 @@ def _add_missing_columns():
                 if col.unique:
                     conn.execute(text(f"CREATE UNIQUE INDEX uq_{table.name}_{col.name} ON {table.name} ({col.name})"))
 
+def _unlink_manual_products():
+    # Ручные товары не связаны с таблицей. Колонка раньше была обязательной,
+    # и в ней лежало введённое название. На SQLite (только локально) база создаётся заново
+    if engine.dialect.name != "postgresql":
+        return
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE products ALTER COLUMN name_from_sheet DROP NOT NULL"))
+        conn.execute(text("UPDATE products SET name_from_sheet = NULL WHERE source = 'manual'"))
+
 def init_db():
     # Создает недостающие таблицы и колонки (идемпотентно)
     Base.metadata.create_all(bind=engine)
     _add_missing_columns()
+    _unlink_manual_products()
 
 def get_db():
     # Зависимость для эндпоинтов (управление сессиями)

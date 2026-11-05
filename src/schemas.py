@@ -23,7 +23,7 @@ class Category(CategoryBase):
 # --- СХЕМЫ ПРОДУКТОВ ---
 
 class ProductBase(BaseModel):
-    name_from_sheet: str
+    name_from_sheet: Optional[str] = None  # у ручных товаров пусто
 
 class Product(ProductBase):
     id: int
@@ -42,7 +42,7 @@ class Product(ProductBase):
     @computed_field
     @property
     def weight_from_name(self) -> Optional[int]:
-        return parse_weight(self.name_from_sheet)
+        return parse_weight(self.name_from_sheet) if self.name_from_sheet else None
 
     @field_validator('source', mode='before')
     @classmethod

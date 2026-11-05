@@ -51,8 +51,8 @@ def delete_category(db: Session, category_id: int) -> bool:
 
 # --- CRUD ДЛЯ ПРОДУКТОВ ---
 
-def get_products(db: Session, skip: int = 0, limit: int = 500) -> List[database.Product]:
-    return db.query(database.Product).offset(skip).limit(limit).all()
+def get_products(db: Session) -> List[database.Product]:
+    return db.query(database.Product).all()
 
 def sync_products(db: Session, names: List[str]) -> int:
     added_count = 0
@@ -89,13 +89,20 @@ def update_product(db: Session, product_id: int, category_ids: List[int], **fiel
     return db_product
 
 def create_product(db: Session, name: str, created_by: str, category_ids: List[int], **fields) -> database.Product:
-    # Название идёт и в ключ: появится в таблице точно такое же — это будет тот же товар
-    db_product = database.Product(name_from_sheet=name, display_name=name, source="manual", created_by=created_by, **fields)
+    db_product = database.Product(display_name=name, source="manual", created_by=created_by, **fields)
     db_product.categories = db.query(database.Category).filter(database.Category.id.in_(category_ids)).all()
     db.add(db_product)
     db.commit()
     db.refresh(db_product)
     return db_product
+
+def delete_product(db: Session, product_id: int) -> bool:
+    db_product = get_product(db, product_id)
+    if not db_product:
+        return False
+    db.delete(db_product)  # привязки к категориям удаляются вместе с ним
+    db.commit()
+    return True
 
 # --- CRUD ДЛЯ ПОЛЬЗОВАТЕЛЕЙ ---
 

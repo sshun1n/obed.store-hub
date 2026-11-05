@@ -117,7 +117,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function parseDishName(fullName) {
+    function parseDishName(sheetName) {
+        const fullName = sheetName || ''; // у ручных товаров названия из таблицы нет
         let mainPart = fullName;
         let composition = "";
         const match = fullName.match(/\d+(?:\s*\/\s*\d+)+|\d+\s*гр\.?(?![а-яё])/i);
@@ -187,7 +188,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (productSearchTerm) {
             const term = productSearchTerm.toLowerCase();
             filtered = filtered.filter(p =>
-                p.name_from_sheet.toLowerCase().includes(term)
+                (p.name_from_sheet || '').toLowerCase().includes(term)
                 || (p.display_name || '').toLowerCase().includes(term)
                 || (p.barcode || '').includes(term));
         }
@@ -390,6 +391,7 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
             ${cardEditing ? `
                 <footer class="pc-footer">
+                    ${cardIsNew ? '' : '<button type="button" class="btn btn-danger-ghost" data-act="delete">Удалить</button>'}
                     <span class="error-msg pc-error" id="pcError"></span>
                     <button type="button" class="btn btn-secondary" data-act="cancel">Отмена</button>
                     <button type="button" class="btn btn-primary" data-act="save">Сохранить</button>
@@ -556,6 +558,31 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function deleteCardProduct() {
+        const product = cardProduct;
+        const ok = await confirmDialog({
+            title: 'Удалить товар?',
+            text: product.name_from_sheet
+                ? 'Штрих-код, вес и КБЖУ будут потеряны. Если товар ещё есть в Google Таблице, при следующей синхронизации он появится снова, но уже пустым.'
+                : 'Товар будет удалён вместе со штрих-кодом, весом и КБЖУ. Вернуть его нельзя.',
+        });
+        if (!ok) return;
+        try {
+            await api(`/api/v1/products/${product.id}`, { method: 'DELETE' });
+        } catch (err) {
+            toast(err.message, 'error');
+            return;
+        }
+        allProducts = allProducts.filter(p => p.id !== product.id);
+        cardEditing = false;
+        draft = null;
+        cardProduct = null;
+        productModal.removeAttribute('data-keep-open');
+        closeModal(productModal);
+        renderProductList();
+        toast('Товар удалён');
+    }
+
     async function generateBarcode() {
         const input = document.getElementById('pcBarcode');
         if (input.value.trim()) {
@@ -670,6 +697,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (act === 'edit') startEdit();
         else if (act === 'cancel') leaveEdit(false);
         else if (act === 'save') saveCard(button);
+        else if (act === 'delete') deleteCardProduct();
         else if (act === 'generate') generateBarcode();
         else if (act === 'add-category') showCategoryMenu(button);
         else if (act === 'close') {

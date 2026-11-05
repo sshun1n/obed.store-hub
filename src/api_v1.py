@@ -20,7 +20,7 @@ router = APIRouter()
 
 def product_title(product) -> str:
     """Короткое имя товара: правка из карточки или название из таблицы без состава."""
-    return product.display_name or parse_dish_name(product.name_from_sheet)[0]
+    return product.display_name or parse_dish_name(product.name_from_sheet or "")[0]
 
 def extract_spreadsheet_id(url: str) -> str:
     """Извлекает уникальный ID таблицы из её URL."""
@@ -181,11 +181,16 @@ def create_product(data: schemas.ProductCreate, db: Session = Depends(get_db), a
 @router.put("/products/{product_id}", response_model=schemas.Product, tags=["Продукты"])
 def update_product(product_id: int, data: schemas.ProductUpdate, db: Session = Depends(get_db), admin: schemas.User = Depends(auth.admin_only)):
     fields = checked_product_fields(db, data, product_id)
+    display_name = (data.display_name or "").strip() or None
+    current = crud.get_product(db, product_id)
+    # У ручного товара нет названия из таблицы, к которому можно вернуться
+    if current and not current.name_from_sheet and not display_name:
+        raise HTTPException(status_code=400, detail="Укажите название товара")
     try:
         product = crud.update_product(
             db, product_id,
             category_ids=data.category_ids,
-            display_name=(data.display_name or "").strip() or None,
+            display_name=display_name,
             **fields,
         )
     except IntegrityError:
@@ -194,6 +199,12 @@ def update_product(product_id: int, data: schemas.ProductUpdate, db: Session = D
     if not product:
         raise HTTPException(status_code=404, detail="Продукт не найден")
     return product
+
+@router.delete("/products/{product_id}", tags=["Продукты"])
+def delete_product(product_id: int, db: Session = Depends(get_db), admin: schemas.User = Depends(auth.admin_only)):
+    if not crud.delete_product(db, product_id):
+        raise HTTPException(status_code=404, detail="Продукт не найден")
+    return {"ok": True}
 
 @router.get("/products/{product_id}/barcode.png", tags=["Продукты"])
 def product_barcode_png(product_id: int, download: bool = False, db: Session = Depends(get_db), user: schemas.User = Depends(auth.get_current_user)):
