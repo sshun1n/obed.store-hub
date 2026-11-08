@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=1.13.2">
+    <link rel="stylesheet" href="/static/style.css?v=1.14.0">
     <link rel="expect" href="#hubEnd" blocking="render">
 </head>
 <body>
@@ -54,8 +54,27 @@
         <div id="content"><div class="empty-state">Загрузка…</div></div>
     </div>
 
+    <div class="modal" id="linkModal">
+        <div class="modal-content modal-wide link-modal" role="dialog" aria-modal="true" aria-labelledby="linkTitle">
+            <h2 class="card-title-small" id="linkTitle">Связать с товаром</h2>
+            <div class="link-source">
+                <div class="cell-main" id="linkName"></div>
+                <div class="cell-sub mono-cell" id="linkBarcode"></div>
+            </div>
+            <p class="field-hint">Выберите блюдо из справочника: штрих-код Лавки запишется в его карточку, и дальше заказы будут сопоставляться сами.</p>
+            <input type="search" id="linkSearch" class="styled-text-input mail-input" placeholder="Поиск по справочнику…" autocomplete="off">
+            <div class="link-list" id="linkList" role="listbox" aria-label="Товары справочника"></div>
+            <span class="error-msg" id="linkError"></span>
+            <div class="modal-actions link-actions">
+                <button type="button" class="btn btn-secondary" id="linkCreate" title="Если такого блюда в справочнике нет">Создать товар</button>
+                <span class="link-actions-gap"></span>
+                <button type="button" class="btn btn-secondary" id="linkCancel">Отмена</button>
+            </div>
+        </div>
+    </div>
+
     <script src="/static/hub-ui.js?v=1.10.0"></script>
-    <script src="/static/lavka.js?v=1.13.0"></script>
+    <script src="/static/lavka.js?v=1.14.0"></script>
     <div id="hubEnd" hidden></div>
 </body>
 </html>

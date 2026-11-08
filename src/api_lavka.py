@@ -1,4 +1,5 @@
 """Заказы Яндекс.Лавки: список по дате поставки, проверка почты, ручная загрузка файла."""
+import re
 from collections import defaultdict
 from datetime import date
 from decimal import Decimal
@@ -9,7 +10,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from src import auth, database, lavka_mail
+from src import auth, barcodes, crud, database, lavka_mail
+from src.service import parse_weight
 from src.api_v1 import product_title
 from src.database import get_db
 
@@ -172,3 +174,95 @@ async def lavka_upload(file: UploadFile = File(...), db: Session = Depends(get_d
     if result.skipped:
         raise HTTPException(status_code=400, detail="Это не файл заказа Лавки или такой файл уже загружали")
     return {"created": result.created, "revised": result.revised, "unchanged": result.unchanged}
+
+
+# --- Привязка штрих-кода Лавки к товару справочника ---
+
+_WORD_RE = re.compile(r"[а-яa-z]+")
+_STOP = {"с", "со", "и", "в", "во", "на", "по", "из", "под", "для", "без", "гр", "г"}
+
+
+def _stems(text: str) -> set:
+    """Основы слов: «Цыплёнок гриль с рисом по-мексикански» и «Цыпленок Гриль/Рис пл-мексикански» близки."""
+    words = _WORD_RE.findall((text or "").lower().replace("ё", "е"))
+    return {w[:5] for w in words if w not in _STOP and len(w) > 1}
+
+
+def _score(lavka_name: str, product_name: str) -> float:
+    a, b = _stems(lavka_name), _stems(product_name)
+    if not a or not b:
+        return 0.0
+    common = len(a & b)
+    # Первое слово — название блюда, совпадение по нему важнее
+    first_a = next(iter(_WORD_RE.findall(lavka_name.lower().replace("ё", "е"))), "")[:5]
+    first_b = next(iter(_WORD_RE.findall(product_name.lower().replace("ё", "е"))), "")[:5]
+    return common / len(a | b) + (0.25 if first_a and first_a == first_b else 0)
+
+
+@router.get("/suggest")
+def lavka_suggest(name: str, db: Session = Depends(get_db), admin=Depends(auth.admin_only)):
+    """Товары справочника, похожие на название из заказа Лавки, лучшие сверху."""
+    scored = []
+    for product in db.query(database.Product).all():
+        title = product_title(product)
+        score = _score(name, f"{title} {product.name_from_sheet or ''}")
+        if score > 0.15:
+            scored.append((score, product, title))
+    scored.sort(key=lambda x: -x[0])
+    return [{"id": p.id, "title": t, "barcode": p.barcode, "is_hidden": bool(p.is_hidden), "score": round(s, 2)}
+            for s, p, t in scored[:8]]
+
+
+class LinkIn(BaseModel):
+    barcode: str = Field(min_length=8, max_length=14)
+    product_id: Optional[int] = None
+    create_name: Optional[str] = Field(default=None, max_length=200)
+    replace: bool = False  # перезаписать прежний код товара или забрать код у другого товара
+
+
+@router.put("/link")
+def lavka_link(data: LinkIn, db: Session = Depends(get_db), admin=Depends(auth.admin_only)):
+    """Записывает штрих-код Лавки в карточку товара или создаёт товар с ним."""
+    barcode = barcodes.normalize(data.barcode)
+    if barcode is None:
+        raise HTTPException(status_code=400, detail="Штрих-код Лавки не похож на EAN-13")
+    holder = db.query(database.Product).filter(database.Product.barcode == barcode).first()
+
+    if data.create_name:
+        name = data.create_name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Укажите название товара")
+        if holder:
+            raise HTTPException(status_code=409, detail=f"Этот код уже у товара «{product_title(holder)}»")
+        if crud.get_product_by_name(db, name):
+            raise HTTPException(status_code=409, detail="Товар с таким названием уже есть: выберите его из списка")
+        # «Крылышки по-восточному…, 275 г»: вес уходит в своё поле, в названии не нужен
+        match = re.search(r",?\s*(\d+)\s*г\.?$", name)
+        weight = int(match.group(1)) if match else parse_weight(name)
+        if match:
+            name = name[:match.start()].strip(" ,")
+        if crud.get_product_by_name(db, name):
+            raise HTTPException(status_code=409, detail="Товар с таким названием уже есть: выберите его из списка")
+        product = crud.create_product(db, name, created_by=admin.full_name or admin.login, category_ids=[],
+                                      barcode=barcode, weight_grams=weight)
+        return {"product": {"id": product.id, "title": product_title(product)}, "created": True}
+
+    product = crud.get_product(db, data.product_id) if data.product_id else None
+    if product is None:
+        raise HTTPException(status_code=404, detail="Товар не найден")
+    if holder and holder.id == product.id:
+        return {"product": {"id": product.id, "title": product_title(product)}, "created": False}
+    conflicts = []
+    if holder:
+        conflicts.append(f"код уже у товара «{product_title(holder)}»")
+    if product.barcode:
+        conflicts.append(f"у «{product_title(product)}» уже есть код {product.barcode}")
+    if conflicts and not data.replace:
+        text = "; ".join(conflicts)
+        raise HTTPException(status_code=409, detail=text[:1].upper() + text[1:])
+    if holder:
+        holder.barcode = None
+        db.flush()
+    product.barcode = barcode
+    db.commit()
+    return {"product": {"id": product.id, "title": product_title(product)}, "created": False}

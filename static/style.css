@@ -1774,3 +1774,19 @@ textarea.styled-text-input { resize: vertical; min-height: 64px; line-height: 1.
 }
 .stats-grid[hidden], .lavka-admin-actions[hidden] { display: none; }
 .poll-last { margin: 10px 0 12px; }
+
+/* Привязка штрих-кода Лавки */
+.lavka-link-btn { margin-left: 6px; padding: 3px 10px; font-size: 0.72rem; }
+.link-modal { max-width: 620px; display: flex; flex-direction: column; gap: 12px; }
+.link-source { padding: 10px 12px; background: var(--paper); border: 1px solid var(--line); border-radius: 8px; }
+.link-list { border: 1px solid var(--line); border-radius: 8px; max-height: 320px; overflow-y: auto; }
+.link-caption { padding: 8px 12px 4px; font-family: var(--mono); font-size: 0.62rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.link-empty { padding: 16px 12px; font-size: 0.82rem; color: var(--muted); }
+.link-option { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border: none; border-top: 1px solid var(--line); background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.link-caption + .link-option, .link-list > .link-option:first-child { border-top: none; }
+.link-option:hover, .link-option:focus-visible { background: #FAF9F6; outline: none; }
+.link-option:hover .link-option-title { color: var(--red); }
+.link-option-title { font-size: 0.86rem; font-weight: 500; }
+.link-option-meta { font-size: 0.72rem; color: var(--muted); white-space: nowrap; }
+.link-actions { align-items: center; }
+.link-actions-gap { flex: 1; }

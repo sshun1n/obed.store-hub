@@ -156,9 +156,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function productCell(item) {
         if (item.product) {
-            return `<a class="lavka-product" href="/management" title="В справочнике: ${esc(item.product.title)}">${esc(item.name)}</a>`;
+            return `<div>${esc(item.name)}</div><div class="cell-sub">в справочнике: ${esc(item.product.title)}</div>`;
         }
-        return `<span>${esc(item.name)}</span> <span class="badge badge-yellow" title="Штрих-кода ${esc(item.barcode)} нет в справочнике">нет в справочнике</span>`;
+        const link = isAdmin
+            ? ` <button type="button" class="btn btn-secondary btn-sm lavka-link-btn" data-act="link" data-barcode="${esc(item.barcode)}">Связать</button>`
+            : '';
+        return `<span>${esc(item.name)}</span> <span class="badge badge-yellow" title="Штрих-кода ${esc(item.barcode)} нет в справочнике">нет в справочнике</span>${link}`;
     }
 
     function renderStats() {
@@ -240,6 +243,134 @@ document.addEventListener('DOMContentLoaded', () => {
     // Несопоставленные товары видны в виде «По товарам»
     el('statUnmatchedCard').addEventListener('click', () => {
         el('viewSeg').querySelector('[data-view="items"]').click();
+    });
+
+    // --- Привязка штрих-кода Лавки к товару (админ) ---
+
+    const linkModal = el('linkModal');
+    const linkList = el('linkList');
+    const linkSearch = el('linkSearch');
+    const linkError = el('linkError');
+    let linkItem = null;       // строка сводки по товарам
+    let suggestions = [];      // похожие по названию
+    let allProducts = null;    // справочник целиком, грузится при первом поиске
+
+    function productRow(p, hint = '') {
+        const code = p.barcode ? `<span class="mono-cell">${esc(p.barcode)}</span>` : '<span class="text-muted">без кода</span>';
+        return `
+            <button type="button" class="link-option" role="option" data-id="${p.id}">
+                <span class="link-option-title">${esc(p.title)}${p.is_hidden ? ' <span class="badge badge-muted">скрыт</span>' : ''}</span>
+                <span class="link-option-meta">${hint}${code}</span>
+            </button>`;
+    }
+
+    function renderLinkList() {
+        const term = linkSearch.value.trim().toLowerCase();
+        if (!term) {
+            linkList.innerHTML = suggestions.length
+                ? '<div class="link-caption">Похожие по названию</div>' + suggestions.map(p => productRow(p)).join('')
+                : '<div class="link-empty">Похожих не нашлось. Найдите блюдо поиском или создайте товар.</div>';
+            return;
+        }
+        const found = (allProducts || []).filter(p => p.title.toLowerCase().includes(term) || (p.barcode || '').includes(term)).slice(0, 30);
+        linkList.innerHTML = found.length
+            ? found.map(p => productRow(p)).join('')
+            : '<div class="link-empty">Ничего не найдено</div>';
+    }
+
+    async function openLink(barcode) {
+        linkItem = current.items.find(i => i.barcode === barcode);
+        if (!linkItem) return;
+        el('linkName').textContent = linkItem.name;
+        el('linkBarcode').textContent = `штрих-код Лавки ${linkItem.barcode}`;
+        linkSearch.value = '';
+        linkError.textContent = '';
+        suggestions = [];
+        linkList.innerHTML = '<div class="link-empty">Подбираю похожие…</div>';
+        Hub.openModal(linkModal);
+        try {
+            suggestions = await api(`/api/v1/lavka/suggest?name=${encodeURIComponent(linkItem.name)}`);
+        } catch (err) {
+            linkError.textContent = err.message;
+        }
+        renderLinkList();
+    }
+
+    async function sendLink(body) {
+        try {
+            return await api('/api/v1/lavka/link', { method: 'PUT', body });
+        } catch (err) {
+            // Конфликт: код уже у другого товара или у товара свой код. Решает человек
+            if (!body.replace && /уже/.test(err.message) && !body.create_name) {
+                const ok = await Hub.confirmDialog({
+                    title: 'Заменить штрих-код?',
+                    text: `${err.message}. Записать код Лавки ${body.barcode} в выбранный товар?`,
+                    okText: 'Заменить',
+                });
+                if (ok) return sendLink({ ...body, replace: true });
+                return null;
+            }
+            throw err;
+        }
+    }
+
+    async function finishLink(result) {
+        if (!result) return;
+        Hub.closeModal(linkModal);
+        toast(result.created ? `Создан товар «${result.product.title}»` : `Связано с «${result.product.title}»`);
+        allProducts = null;
+        await loadDay();
+    }
+
+    linkList.addEventListener('click', async (e) => {
+        const option = e.target.closest('.link-option');
+        if (!option) return;
+        linkError.textContent = '';
+        try {
+            await finishLink(await sendLink({ barcode: linkItem.barcode, product_id: Number(option.dataset.id) }));
+        } catch (err) {
+            linkError.textContent = err.message;
+        }
+    });
+
+    linkSearch.addEventListener('input', async () => {
+        if (allProducts === null) {
+            allProducts = [];
+            try {
+                const products = await api('/api/v1/products/');
+                allProducts = products.map(p => ({
+                    id: p.id,
+                    title: p.display_name || (p.name_from_sheet || '').split(/\s\d/)[0] || p.name_from_sheet || '',
+                    barcode: p.barcode,
+                    is_hidden: p.is_hidden,
+                }));
+            } catch (err) {
+                linkError.textContent = err.message;
+            }
+        }
+        renderLinkList();
+    });
+
+    el('linkCreate').addEventListener('click', async () => {
+        const ok = await Hub.confirmDialog({
+            title: 'Создать товар?',
+            text: `В справочнике появится «${linkItem.name}» со штрих-кодом Лавки ${linkItem.barcode}. Состав и КБЖУ заполните потом в карточке.`,
+            okText: 'Создать',
+            danger: false,
+        });
+        if (!ok) return;
+        try {
+            await finishLink(await sendLink({ barcode: linkItem.barcode, create_name: linkItem.name }));
+        } catch (err) {
+            linkError.textContent = err.message;
+        }
+    });
+
+    el('linkCancel').addEventListener('click', () => Hub.closeModal(linkModal));
+
+    content.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-act="link"]');
+        if (btn) openLink(btn.dataset.barcode);
     });
 
     daySelect.addEventListener('change', loadDay);
