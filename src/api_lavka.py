@@ -205,7 +205,8 @@ def lavka_suggest(name: str, db: Session = Depends(get_db), admin=Depends(auth.a
     scored = []
     for product in db.query(database.Product).all():
         title = product_title(product)
-        score = _score(name, f"{title} {product.name_from_sheet or ''}")
+        # Только название блюда: в name_from_sheet после веса идёт весь состав, он размывает оценку
+        score = _score(name, title)
         if score > 0.15:
             scored.append((score, product, title))
     scored.sort(key=lambda x: -x[0])
