@@ -439,7 +439,7 @@ def lavka_sheet_html(start: date, end: date, left: str = "", right: str = "",
 def lavka_sheet_pdf(start: date, end: date, left: str = "", right: str = "",
                     db: Session = Depends(get_db), user=Depends(auth.get_current_user)):
     # Логотип путём к файлу: по http WeasyPrint постучался бы в это же приложение
-    html, label = _render_sheet(db, start, end, left, right, "pdf", (STATIC_DIR / "img" / "logo-bw.svg").as_uri())
+    html, label = _render_sheet(db, start, end, left, right, "pdf", (STATIC_DIR / "img" / "obed-logo.svg").as_uri())
     try:
         from weasyprint import HTML  # тяжёлая библиотека, без Pango падает с OSError
     except (ImportError, OSError) as exc:
