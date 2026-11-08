@@ -60,11 +60,12 @@
                 ${isAdmin ? link('/timesheet', '03', 'Учёт времени') : ''}
                 ${isAdmin ? link('/employees', '04', 'Сотрудники', ['/employee']) : ''}
                 <div class="side-caption">Лавка и СБИС</div>
-                ${link('/carriers', '05', 'Перевозчики')}
-                ${link('/entities', '06', 'Юрлица')}
+                ${link('/lavka', '05', 'Заказы Лавки')}
+                ${link('/carriers', '06', 'Перевозчики')}
+                ${link('/entities', '07', 'Юрлица')}
                 <div class="side-caption">Система</div>
-                ${link('/management', '07', 'Продукция')}
-                ${isAdmin ? link('/admin', '08', 'Админ-панель') : ''}
+                ${link('/management', '08', 'Продукция')}
+                ${isAdmin ? link('/admin', '09', 'Админ-панель') : ''}
             </nav>
             <div class="side-user">
                 ${currentUser ? `

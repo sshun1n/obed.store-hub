@@ -8,11 +8,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=1.12.2">
+    <link rel="stylesheet" href="/static/style.css?v=1.13.2">
     <link rel="expect" href="#hubEnd" blocking="render">
 </head>
 <body>
-    <script src="/static/components.js?v=1.12.0"></script>
+    <script src="/static/components.js?v=1.13.0"></script>
     <div class="container">
         <header class="page-header">
             <span class="eyebrow">Система</span>
@@ -118,7 +118,71 @@
                         <button type="submit" class="btn btn-primary" id="mailSaveBtn">Сохранить</button>
                     </div>
                 </form>
+
+                <hr class="form-divider">
+                <h3 class="form-subhead">Опрос почты</h3>
+                <div class="sync-auto-row">
+                    <label class="switch" title="Включить или выключить опрос почты по расписанию">
+                        <input type="checkbox" id="pollEnabled" role="switch" aria-label="Опрос почты по расписанию">
+                        <span class="switch-track"></span>
+                    </label>
+                    <div class="sync-auto-text">
+                        <div class="sync-auto-state" id="pollState"></div>
+                        <div class="field-hint" id="pollSummary"></div>
+                    </div>
+                    <button type="button" class="btn btn-secondary btn-sm" id="pollConfigureBtn">Настроить</button>
+                </div>
+                <p class="field-hint poll-last" id="pollLast"></p>
+                <div class="mail-actions">
+                    <button type="button" class="btn btn-secondary btn-sm" id="historyBtn" title="Перечитать весь ящик с начала. Уже загруженное пропускается">Загрузить историю</button>
+                </div>
             </div>
+        </div>
+    </div>
+
+    <div class="modal" id="pollSettingsModal">
+        <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="pollSettingsTitle">
+            <h2 class="card-title-small" id="pollSettingsTitle">Опрос почты Лавки</h2>
+            <form id="pollSettingsForm" class="form-layout">
+                <div class="form-group">
+                    <span class="control-label">Дни</span>
+                    <div class="wd-toggles" id="pollDays"></div>
+                    <div class="quick-dates poll-day-presets">
+                        <button type="button" class="chip" data-days="0,1,2,3,4">Будни</button>
+                        <button type="button" class="chip" data-days="0,1,2,3,4,5,6">Все дни</button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="pollInterval" class="control-label">Интервал</label>
+                    <select id="pollInterval" class="styled-text-input">
+                        <option value="15">15 минут</option>
+                        <option value="30">30 минут</option>
+                        <option value="60">1 час</option>
+                        <option value="120">2 часа</option>
+                    </select>
+                </div>
+                <div class="form-grid-2">
+                    <div class="form-group">
+                        <label for="pollStart" class="control-label">С</label>
+                        <input type="time" id="pollStart" class="styled-date-input" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="pollEnd" class="control-label">До</label>
+                        <input type="time" id="pollEnd" class="styled-date-input" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="pollSenders" class="control-label">Отправители</label>
+                    <textarea id="pollSenders" class="styled-text-input mail-input" rows="3" spellcheck="false"></textarea>
+                    <span class="field-hint">Адреса через запятую. Письма других отправителей не открываются: в ящике и уведомления СБИС, и чужая переписка.</span>
+                </div>
+                <span class="field-hint">Время московское. В остальное время почту проверяет кнопка на странице «Заказы Лавки».</span>
+                <span class="error-msg" id="pollSettingsError"></span>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" id="pollSettingsCancel">Отмена</button>
+                    <button type="submit" class="btn btn-primary">Сохранить</button>
+                </div>
+            </form>
         </div>
     </div>
 
@@ -165,7 +229,7 @@
 
     <script src="/static/hub-ui.js?v=1.10.0"></script>
     <script src="/static/admin.js?v=1.9.4"></script>
-    <script src="/static/mail-settings.js?v=1.11.0"></script>
+    <script src="/static/mail-settings.js?v=1.13.0"></script>
     <div id="hubEnd" hidden></div>
 </body>
 </html>

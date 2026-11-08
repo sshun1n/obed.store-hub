@@ -3,7 +3,7 @@ import logging
 from dotenv import load_dotenv
 from sqlalchemy import (
     create_engine, Column, Integer, String, DateTime, ForeignKey, Boolean,
-    Date, Float, Text, UniqueConstraint, inspect, text
+    Date, Float, Numeric, Text, UniqueConstraint, inspect, text
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
@@ -121,6 +121,9 @@ class SyncSettings(Base):
     end_time = Column(String, default="17:00", nullable=False)
     weekdays = Column(String, default="0,1,2,3,4,5,6")  # 0 — понедельник, как в work_schedules
 
+# Роботы Лавки: заказы шлёт robot-emelya, отчёты — robot-lavka-metrics (у Ателье robot-sla-report)
+DEFAULT_LAVKA_SENDERS = "robot-emelya@yandex-team.ru, robot-lavka-metrics@yandex-team.ru, robot-sla-report@yandex-team.ru"
+
 class MailSettings(Base):
     # Ящик, куда Яндекс.Лавка присылает заказы и отчёты (одна строка).
     # Пароль приложения хранится зашифрованным ключом из SECRET_KEY и наружу не отдаётся
@@ -138,6 +141,100 @@ class MailSettings(Base):
     checked_at = Column(DateTime, nullable=True)
     check_ok = Column(Boolean, nullable=True)
     check_message = Column(String, nullable=True)
+
+    # Чьи письма разбирать, через запятую. В ящике и уведомления СБИС, и чужая переписка
+    senders = Column(Text, nullable=True, default=DEFAULT_LAVKA_SENDERS)
+    # Курсор: UID последнего просмотренного письма. Обычный опрос идёт только дальше него
+    last_uid = Column(Integer, nullable=True, default=0)
+    last_poll_at = Column(DateTime, nullable=True)      # местное время, как у синхронизации
+    last_poll_result = Column(String, nullable=True)
+    last_poll_error = Column(String, nullable=True)
+    # Расписание опроса, местное время. Поля названы как у sync_settings: проверка срока общая
+    enabled = Column(Boolean, nullable=True, default=True)
+    interval_minutes = Column(Integer, nullable=True, default=30)
+    start_time = Column(String, nullable=True, default="08:00")
+    end_time = Column(String, nullable=True, default="12:30")
+    weekdays = Column(String, nullable=True, default="0,1,2,3,4")
+
+# --- ЗАКАЗЫ ЯНДЕКС.ЛАВКИ (из почты) ---
+
+class LavkaPoint(Base):
+    # Лавка-получатель: один склад Яндекса — одна точка доставки
+    __tablename__ = "lavka_points"
+
+    id = Column(Integer, primary_key=True, index=True)
+    external_id = Column(String(30), unique=True, nullable=False)  # «Склад ИД»
+    name = Column(String(150), nullable=False)                     # «Культуры 14»
+    address = Column(String(300), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class LavkaOrder(Base):
+    # Заказ на одну точку. В одном файле их несколько, по числу лавок.
+    # Номер ЯЛ… — ключ повторной присылки: тот же номер в новом файле — исправленная версия
+    __tablename__ = "lavka_orders"
+
+    id = Column(Integer, primary_key=True, index=True)
+    order_no = Column(String(30), unique=True, nullable=False)
+    order_date = Column(Date, nullable=True)
+    delivery_date = Column(Date, nullable=False, index=True)  # «Дата поступления заказа»
+    point_id = Column(Integer, ForeignKey("lavka_points.id"), nullable=False, index=True)
+    supplier_inn = Column(String(12), nullable=True)
+    buyer_inn = Column(String(12), nullable=True)
+
+    # Итоги денормализованы при импорте: список за месяц не пересчитывает строки
+    total_quantity = Column(Integer, default=0)
+    total_net = Column(Numeric(12, 2), default=0)
+    total_gross = Column(Numeric(12, 2), default=0)
+
+    source_message_id = Column(String(255), nullable=True)
+    source_filename = Column(String(255), nullable=True)
+    imported_at = Column(DateTime, default=datetime.utcnow)
+    # Заказ переписан более поздним файлом с другим составом — видно на странице
+    revised_at = Column(DateTime, nullable=True)
+
+    point = relationship("LavkaPoint")
+    lines = relationship("LavkaOrderLine", back_populates="order", cascade="all, delete-orphan",
+                         order_by="LavkaOrderLine.id")
+
+class LavkaOrderLine(Base):
+    __tablename__ = "lavka_order_lines"
+
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("lavka_orders.id", ondelete="CASCADE"), nullable=False, index=True)
+    # Штрих-код Лавки — ключ сверки со справочником. Товар не храним, а ищем по коду
+    # при показе: код в карточку могут внести и после того, как заказ пришёл
+    barcode = Column(String(20), nullable=False, index=True)
+    vendor_code = Column(String(30), nullable=True)   # «Артикул поставщика», бывает пуст
+    lavka_id = Column(String(30), nullable=True)      # «Лавка ИД», SKU Лавки
+    name = Column(String(300), nullable=False)        # без невидимых символов и названия марки
+    name_raw = Column(String(400), nullable=False)    # как в файле
+    quantity = Column(Integer, nullable=False)
+    price_net = Column(Numeric(10, 2), nullable=False)
+    price_gross = Column(Numeric(10, 2), nullable=False)
+    sum_net = Column(Numeric(12, 2), nullable=False)
+    sum_gross = Column(Numeric(12, 2), nullable=False)
+    vat_rate = Column(Numeric(5, 2), nullable=True)
+
+    order = relationship("LavkaOrder", back_populates="lines")
+
+class LavkaMailFile(Base):
+    # Журнал разобранных вложений. Ключ — письмо и файл вместе: в одном письме
+    # Лавка присылает два файла с одинаковым именем, и журнал по письму потерял бы второй
+    __tablename__ = "lavka_mail_files"
+    __table_args__ = (UniqueConstraint("message_id", "attachment_sha256", name="uq_lavka_mail_file"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    message_id = Column(String(255), nullable=False, index=True)
+    attachment_sha256 = Column(String(64), nullable=False, index=True)
+    uid = Column(Integer, nullable=True)
+    sender = Column(String(255), nullable=True)
+    subject = Column(String(500), nullable=True)
+    filename = Column(String(255), nullable=True)
+    received_at = Column(DateTime, nullable=True)   # UTC
+    processed_at = Column(DateTime, default=datetime.utcnow)
+    kind = Column(String(20), nullable=True)        # orders | skipped | error
+    orders_found = Column(Integer, default=0)
+    note = Column(Text, nullable=True)
 
 # --- ЮРЛИЦА И ПЕРЕВОЗЧИКИ (Яндекс.Лавка и СБИС) ---
 

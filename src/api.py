@@ -17,6 +17,8 @@ import src.api_timesheet as api_timesheet
 import src.api_employees as api_employees
 import src.api_mail as api_mail
 import src.api_parties as api_parties
+import src.api_lavka as api_lavka
+from src import lavka_mail
 from src.database import get_db, Product, Category
 import src.database as database
 import src.crud as crud
@@ -42,6 +44,7 @@ app.include_router(api_timesheet.router, prefix="/api/v1")
 app.include_router(api_employees.router, prefix="/api/v1")
 app.include_router(api_mail.router, prefix="/api/v1")
 app.include_router(api_parties.router, prefix="/api/v1")
+app.include_router(api_lavka.router, prefix="/api/v1")
 
 # Глобальный словарь для сервисов
 services: Dict[str, Any] = {}
@@ -62,6 +65,7 @@ async def startup_event() -> None:
     except Exception as e:
         logger.critical(f"Ошибка старта: {e}", exc_info=True)
     sheet_sync.start_scheduler()
+    lavka_mail.start_scheduler()
 
 # --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 

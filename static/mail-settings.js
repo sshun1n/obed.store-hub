@@ -137,4 +137,153 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     load();
+
+    // --- Опрос почты по расписанию ---
+    const pollEnabled = document.getElementById('pollEnabled');
+    const pollModal = document.getElementById('pollSettingsModal');
+    const pollForm = document.getElementById('pollSettingsForm');
+    const pollDays = document.getElementById('pollDays');
+    const pollError = document.getElementById('pollSettingsError');
+    const historyBtn = document.getElementById('historyBtn');
+    let poll = null; // статус с сервера
+
+    pollDays.innerHTML = Hub.WEEKDAYS.map((name, day) =>
+        `<button type="button" class="wd-btn${day >= 5 ? ' wd-wknd' : ''}" data-day="${day}" aria-pressed="false">${name}</button>`
+    ).join('');
+
+    function setPollDays(days) {
+        pollDays.querySelectorAll('.wd-btn').forEach((btn) => {
+            const on = days.includes(Number(btn.dataset.day));
+            btn.classList.toggle('on', on);
+            btn.setAttribute('aria-pressed', on);
+        });
+    }
+
+    function showPoll(status) {
+        poll = status;
+        const auto = status.auto;
+        pollEnabled.checked = auto.enabled;
+        document.getElementById('pollState').textContent = auto.enabled ? 'Включён' : 'Выключен';
+        const summary = document.getElementById('pollSummary');
+        summary.textContent = auto.summary;
+        summary.classList.toggle('sync-auto-off', !auto.enabled);
+        const last = document.getElementById('pollLast');
+        if (status.history.running) {
+            last.textContent = `Загружается история: порций ${status.history.done}${status.history.remaining ? `, осталось писем ${status.history.remaining}` : ''}…`;
+        } else if (status.last_poll_at) {
+            const [day, time] = status.last_poll_at.split('T');
+            last.textContent = `Последняя проверка ${Hub.fmtDate(day)} в ${time.slice(0, 5)}: ${status.last_poll_result || '—'}`
+                + (status.last_poll_error ? `. Ошибка: ${status.last_poll_error}` : '');
+        } else {
+            last.textContent = 'Почту ещё не проверяли.';
+        }
+        historyBtn.disabled = status.history.running || !status.configured;
+    }
+
+    async function loadPoll() {
+        try {
+            showPoll(await api('/api/v1/lavka/status'));
+        } catch (err) {
+            document.getElementById('pollLast').textContent = err.message;
+        }
+    }
+
+    async function savePoll(values) {
+        showPoll(await api('/api/v1/lavka/schedule', { method: 'PUT', body: values }));
+    }
+
+    function pollValues(overrides = {}) {
+        return {
+            enabled: poll.auto.enabled,
+            interval_minutes: poll.auto.interval_minutes,
+            start_time: poll.auto.start_time,
+            end_time: poll.auto.end_time,
+            weekdays: poll.auto.weekdays,
+            ...overrides,
+        };
+    }
+
+    pollEnabled.addEventListener('change', async () => {
+        const enabled = pollEnabled.checked;
+        pollEnabled.disabled = true;
+        try {
+            await savePoll(pollValues({ enabled }));
+            toast(enabled ? 'Опрос почты включён' : 'Опрос почты выключен');
+        } catch (err) {
+            pollEnabled.checked = !enabled;
+            toast(err.message, 'error');
+        } finally {
+            pollEnabled.disabled = false;
+        }
+    });
+
+    document.getElementById('pollConfigureBtn').addEventListener('click', () => {
+        const auto = poll.auto;
+        setPollDays(auto.weekdays);
+        const interval = document.getElementById('pollInterval');
+        if (![...interval.options].some(o => o.value === String(auto.interval_minutes))) {
+            interval.add(new Option(`${auto.interval_minutes} минут`, auto.interval_minutes));
+        }
+        interval.value = String(auto.interval_minutes);
+        document.getElementById('pollStart').value = auto.start_time;
+        document.getElementById('pollEnd').value = auto.end_time;
+        document.getElementById('pollSenders').value = poll.senders.join(', ');
+        pollError.textContent = '';
+        Hub.openModal(pollModal);
+    });
+
+    document.getElementById('pollSettingsCancel').addEventListener('click', () => Hub.closeModal(pollModal));
+
+    pollDays.addEventListener('click', (e) => {
+        const btn = e.target.closest('.wd-btn');
+        if (!btn) return;
+        btn.classList.toggle('on');
+        btn.setAttribute('aria-pressed', btn.classList.contains('on'));
+    });
+
+    pollModal.querySelector('.poll-day-presets').addEventListener('click', (e) => {
+        const chip = e.target.closest('[data-days]');
+        if (chip) setPollDays(chip.dataset.days.split(',').map(Number));
+    });
+
+    pollForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const weekdays = [...pollDays.querySelectorAll('.wd-btn.on')].map(btn => Number(btn.dataset.day));
+        if (!weekdays.length) { pollError.textContent = 'Выберите хотя бы один день'; return; }
+        pollError.textContent = '';
+        try {
+            await savePoll(pollValues({
+                interval_minutes: Number(document.getElementById('pollInterval').value),
+                start_time: document.getElementById('pollStart').value,
+                end_time: document.getElementById('pollEnd').value,
+                weekdays,
+                senders: document.getElementById('pollSenders').value,
+            }));
+            Hub.closeModal(pollModal);
+            toast('Расписание опроса сохранено');
+        } catch (err) {
+            pollError.textContent = err.message;
+        }
+    });
+
+    historyBtn.addEventListener('click', async () => {
+        const ok = await confirmDialog({
+            title: 'Загрузить историю почты?',
+            text: 'Приложение перечитает весь ящик с начала и загрузит заказы Лавки, которых ещё нет. Это может занять несколько минут. Уже загруженное не задвоится.',
+            okText: 'Загрузить',
+            danger: false,
+        });
+        if (!ok) return;
+        try {
+            await api('/api/v1/lavka/history', { method: 'POST' });
+            toast('Загрузка истории началась');
+            loadPoll();
+        } catch (err) {
+            toast(err.message, 'error');
+        }
+    });
+
+    loadPoll();
+    // Пока идёт история, показываем ход
+    setInterval(() => { if (!document.hidden && poll && poll.history.running) loadPoll(); }, 4000);
 });

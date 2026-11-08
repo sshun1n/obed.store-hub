@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Заказы Лавки | OBED.STORE Hub</title>
+    <link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css?v=1.13.2">
+    <link rel="expect" href="#hubEnd" blocking="render">
+</head>
+<body>
+    <script src="/static/components.js?v=1.13.0"></script>
+    <div class="container">
+        <header class="page-header page-head-row">
+            <div>
+                <span class="eyebrow">Лавка и СБИС</span>
+                <h1>Заказы Лавки</h1>
+                <p class="subtitle">Заказы приходят письмами от Яндекс.Лавки и разбираются сами. Товары сверяются со справочником по штрих-коду.</p>
+            </div>
+            <div class="lavka-mail-bar">
+                <span class="lavka-mail-state" id="mailState"></span>
+                <button type="button" class="btn btn-secondary btn-sm" id="checkBtn">Проверить почту</button>
+            </div>
+        </header>
+
+        <div class="controls-panel lavka-controls">
+            <div class="input-group lavka-days">
+                <button type="button" class="icon-btn" id="prevDay" aria-label="Предыдущая дата">‹</button>
+                <select id="daySelect" class="styled-text-input lavka-day-select" aria-label="Дата поставки"></select>
+                <button type="button" class="icon-btn" id="nextDay" aria-label="Следующая дата">›</button>
+            </div>
+            <div class="seg" id="viewSeg">
+                <button type="button" class="seg-btn active" data-view="points">По точкам</button>
+                <button type="button" class="seg-btn" data-view="items">По товарам</button>
+            </div>
+            <div class="lavka-admin-actions" id="adminActions" hidden>
+                <button type="button" class="btn btn-secondary btn-sm" id="uploadBtn">Загрузить файл</button>
+                <input type="file" id="uploadInput" accept=".xlsx" hidden>
+            </div>
+        </div>
+
+        <div class="stats-grid" id="stats" hidden>
+            <div class="stat-card"><span class="stat-label">Заказов</span><span class="stat-value" id="statOrders">—</span></div>
+            <div class="stat-card"><span class="stat-label">Штук</span><span class="stat-value" id="statQty">—</span></div>
+            <div class="stat-card"><span class="stat-label">Сумма с НДС</span><span class="stat-value" id="statGross">—</span></div>
+            <button type="button" class="stat-card stat-link" id="statUnmatchedCard" title="Показать товары">
+                <span class="stat-label">Нет в справочнике</span><span class="stat-value" id="statUnmatched">—</span>
+            </button>
+        </div>
+
+        <div id="content"><div class="empty-state">Загрузка…</div></div>
+    </div>
+
+    <script src="/static/hub-ui.js?v=1.10.0"></script>
+    <script src="/static/lavka.js?v=1.13.0"></script>
+    <div id="hubEnd" hidden></div>
+</body>
+</html>
