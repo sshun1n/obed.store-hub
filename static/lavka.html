@@ -8,11 +8,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=1.14.0">
+    <link rel="stylesheet" href="/static/style.css?v=1.15.2">
     <link rel="expect" href="#hubEnd" blocking="render">
 </head>
 <body>
-    <script src="/static/components.js?v=1.13.0"></script>
+    <script src="/static/components.js?v=1.15.0"></script>
     <div class="container">
         <header class="page-header page-head-row">
             <div>
@@ -27,30 +27,32 @@
         </header>
 
         <div class="controls-panel lavka-controls">
-            <div class="input-group lavka-days">
-                <button type="button" class="icon-btn" id="prevDay" aria-label="Предыдущая дата">‹</button>
-                <select id="daySelect" class="styled-text-input lavka-day-select" aria-label="Дата поставки"></select>
-                <button type="button" class="icon-btn" id="nextDay" aria-label="Следующая дата">›</button>
+            <div class="period-picker" id="periodPicker">
+                <button type="button" class="icon-btn" id="prevPeriod" aria-label="Предыдущий период">‹</button>
+                <button type="button" class="period-btn" id="periodBtn" aria-haspopup="dialog" aria-expanded="false">
+                    <span class="period-kind" id="periodKind">День</span>
+                    <span class="period-label" id="periodLabel">—</span>
+                    <span class="period-caret" aria-hidden="true">▾</span>
+                </button>
+                <button type="button" class="icon-btn" id="nextPeriod" aria-label="Следующий период">›</button>
+                <div class="period-pop" id="periodPop" role="dialog" aria-label="Выбор даты или периода" hidden></div>
             </div>
-            <div class="seg" id="viewSeg">
-                <button type="button" class="seg-btn active" data-view="points">По точкам</button>
-                <button type="button" class="seg-btn" data-view="items">По товарам</button>
-            </div>
-            <div class="lavka-admin-actions" id="adminActions" hidden>
-                <button type="button" class="btn btn-secondary btn-sm" id="uploadBtn">Загрузить файл</button>
+            <div class="lavka-actions">
+                <button type="button" class="btn btn-secondary btn-sm" id="uploadBtn" hidden>Загрузить файл</button>
                 <input type="file" id="uploadInput" accept=".xlsx" hidden>
+                <button type="button" class="btn btn-primary btn-sm" id="sheetBtn">Номенклатура</button>
             </div>
         </div>
 
-        <div class="stats-grid" id="stats" hidden>
-            <div class="stat-card"><span class="stat-label">Заказов</span><span class="stat-value" id="statOrders">—</span></div>
-            <div class="stat-card"><span class="stat-label">Штук</span><span class="stat-value" id="statQty">—</span></div>
-            <div class="stat-card"><span class="stat-label">Сумма с НДС</span><span class="stat-value" id="statGross">—</span></div>
-            <button type="button" class="stat-card stat-link" id="statUnmatchedCard" title="Показать товары">
-                <span class="stat-label">Нет в справочнике</span><span class="stat-value" id="statUnmatched">—</span>
-            </button>
+        <div class="stats-grid lavka-stats" id="stats" hidden>
+            <div class="stat-card"><span class="stat-label">Заказов</span><span class="stat-value" id="statOrders">—</span><span class="stat-delta" id="dOrders"></span></div>
+            <div class="stat-card"><span class="stat-label">Точек</span><span class="stat-value" id="statPoints">—</span><span class="stat-delta" id="dPoints"></span></div>
+            <div class="stat-card"><span class="stat-label">Штук</span><span class="stat-value" id="statQty">—</span><span class="stat-delta" id="dQty"></span></div>
+            <div class="stat-card"><span class="stat-label">Сумма с НДС</span><span class="stat-value" id="statGross">—</span><span class="stat-delta" id="dGross"></span></div>
         </div>
+        <p class="lavka-compare" id="compareLabel" hidden></p>
 
+        <div id="notices"></div>
         <div id="content"><div class="empty-state">Загрузка…</div></div>
     </div>
 
@@ -73,8 +75,33 @@
         </div>
     </div>
 
+    <div class="modal" id="sheetModal">
+        <div class="modal-content sheet-modal" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+            <header class="sheet-modal-head">
+                <div>
+                    <span class="eyebrow">Лист на производство</span>
+                    <h2 class="card-title-small" id="sheetTitle">Номенклатура</h2>
+                </div>
+                <div class="sheet-modal-actions">
+                    <button type="button" class="btn btn-primary" id="sheetPrint">Печать</button>
+                    <button type="button" class="icon-btn" id="sheetClose" aria-label="Закрыть">&times;</button>
+                </div>
+            </header>
+            <div class="sheet-sorts">
+                <label>Левая половина<select id="sortLeft" class="styled-text-input"></select></label>
+                <label>Правая половина<select id="sortRight" class="styled-text-input"></select></label>
+            </div>
+            <div class="sheet-stage" id="sheetStage">
+                <iframe id="sheetFrame" title="Предпросмотр листа номенклатуры"></iframe>
+            </div>
+            <p class="field-hint sheet-hint">A4 альбомный, два экземпляра рядом: лист режется по пунктиру. В окне печати выберите альбомную ориентацию, если принтер не возьмёт её сам.</p>
+        </div>
+    </div>
+
     <script src="/static/hub-ui.js?v=1.10.0"></script>
-    <script src="/static/lavka.js?v=1.14.0"></script>
+    <script src="/static/period-picker.js?v=1.15.0"></script>
+    <script src="/static/lavka-sheet.js?v=1.15.2"></script>
+    <script src="/static/lavka.js?v=1.15.1"></script>
     <div id="hubEnd" hidden></div>
 </body>
 </html>

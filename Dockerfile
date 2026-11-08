@@ -1,13 +1,19 @@
 # Используем официальный легкий образ Python
 FROM python:3.10-slim
 
-# Установка системных зависимостей для psycopg2 и шрифтов
+# Системные зависимости: psycopg2, шрифты и Pango для WeasyPrint (лист номенклатуры Лавки
+# в PDF, как в ka-webapp). fonts-dejavu-core — ради кириллицы: в slim-образе шрифтов нет
 RUN apt-get update && apt-get install -y \
     libpq-dev \
     gcc \
     fonts-liberation \
+    fonts-dejavu-core \
     fontconfig \
+    libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b libfribidi0 \
     && rm -rf /var/lib/apt/lists/*
+
+# fontconfig держит кэш шрифтов в домашнем каталоге; без явного пути сыплет ошибками при сборке PDF
+ENV XDG_CACHE_HOME=/tmp/.cache
 
 # Установка рабочей директории
 WORKDIR /app

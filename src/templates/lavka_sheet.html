@@ -1,0 +1,110 @@
+{# Лист номенклатуры на производство, перенесён из ka-webapp (yandex/nomenclature.html).
+   A4 альбомная, два экземпляра рядом, лист режется вдоль пополам — каждому
+   сотруднику по узкой высокой половинке. Печать строго Ч/Б: ни заливок, ни
+   цвета, только чёрный текст и тонкие линейки.
+   mode: "pdf" — для WeasyPrint, "preview" — тот же лист в окне предпросмотра. #}
+{% macro half(items, logo) %}
+<table class="head">
+  <tr>
+    <td class="logo"><img src="{{ logo }}" alt=""></td>
+    <td class="title">
+      <span class="brand">Яндекс {{ day_label }}</span><span class="dash">—</span><span class="sub">{{ total_quantity }} шт.</span>
+    </td>
+  </tr>
+</table>
+
+<table class="items" style="font-size: {{ font_pt }}pt;">
+  <thead>
+    <tr>
+      <th class="tick"></th>
+      <th>Наименование</th>
+      <th class="num">Кол-во</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in items %}
+    <tr>
+      {# Пустой квадрат под галочку — рамкой, а не символом шрифта:
+         в PDF нужного глифа может не оказаться #}
+      <td class="tick"><span class="box"></span></td>
+      <td>{{ item.name }}</td>
+      <td class="num">{{ item.quantity }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endmacro %}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Яндекс {{ day_label }} — номенклатура</title>
+  <style>
+    @page { size: A4 landscape; margin: 7mm 8mm; }
+
+    * { box-sizing: border-box; }
+    /* Метрически совместимый набор: Arial у пользователя, Liberation Sans в контейнере */
+    body { font-family: Arial, "Liberation Sans", "DejaVu Sans", sans-serif;
+           color: #000; margin: 0; font-size: 9pt; line-height: 1.25; }
+
+    /* Две половины рядом — таблицей, а не flex: WeasyPrint раскладывает flex по своим
+       правилам, а колонки таблицы оба движка делят одинаково. Ширину ячейкам не задаём:
+       при заданной WeasyPrint дописывает border-spacing сверх ширины */
+    .sheet-grid { width: 100%; table-layout: fixed; border-collapse: collapse; }
+    .sheet-grid > tbody > tr > td { vertical-align: top; padding: 0; border: none; }
+    /* Линия реза */
+    .sheet-grid td.left { border-right: 1pt dashed #000; padding-right: 7mm; }
+    .sheet-grid td.right { padding-left: 7mm; }
+
+    /* Шапка в одну строку: чем меньше она занимает, тем крупнее список */
+    .head { width: 100%; border-collapse: collapse; margin-bottom: 2mm; }
+    .head td { padding: 0; vertical-align: middle; border: none; }
+    .head td.logo { width: 18mm; }
+    .head img { width: 15mm; height: 15mm; object-fit: contain; }
+    .brand { font-size: 16pt; font-weight: bold; letter-spacing: -0.01em; }
+    .dash { font-size: 13pt; padding: 0 7pt; }
+    .sub { font-size: 13pt; }
+
+    .items { width: 100%; border-collapse: collapse; line-height: 1.2; }
+    .items th {
+      text-align: left;
+      font-size: 1em;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+      padding: 0 0.35em 0.2em;
+      border-bottom: 1pt solid #000;
+    }
+    /* Отступы и клетка в em: вся строка масштабируется одним кеглем, подобранным под число позиций */
+    .items td { padding: 0.3em 0.35em; border-bottom: 0.5pt solid #999; }
+    .items .num { text-align: right; white-space: nowrap; font-weight: bold; width: 13mm; }
+    .items .tick { width: 2.2em; padding-left: 0; padding-right: 0.25em; }
+    .box {
+      display: inline-block;
+      width: 1.8em;
+      height: 1.15em;
+      border: 0.75pt solid #000;
+      border-radius: 0.5mm;
+      vertical-align: middle;
+    }
+
+    {% if mode == "preview" %}
+    html, body { background: transparent; }
+    body { padding: 0; }
+    /* Высота листа задана нарочно: видно, упирается список в край страницы или нет */
+    .sheet { background: #fff; width: 297mm; height: 210mm; margin: 0;
+             padding: 7mm 8mm; overflow: hidden; }
+    {% endif %}
+  </style>
+</head>
+<body>
+<div class="{{ 'sheet' if mode == 'preview' else '' }}">
+  <table class="sheet-grid">
+    <tr>
+      <td class="left">{{ half(items_left, logo_src) }}</td>
+      <td class="right">{{ half(items_right, logo_src) }}</td>
+    </tr>
+  </table>
+</div>
+</body>
+</html>

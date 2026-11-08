@@ -1,14 +1,17 @@
 """Заказы Яндекс.Лавки: список по дате поставки, проверка почты, ручная загрузка файла."""
 import re
-from collections import defaultdict
-from datetime import date
+from pathlib import Path
+from urllib.parse import quote
+from datetime import date, timedelta
 from decimal import Decimal
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
+from fastapi.responses import HTMLResponse
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pydantic import BaseModel, Field
 from sqlalchemy import func
-from sqlalchemy.orm import Session, joinedload, selectinload
+from sqlalchemy.orm import Session
 
 from src import auth, barcodes, crud, database, lavka_mail
 from src.service import parse_weight
@@ -79,72 +82,121 @@ def lavka_schedule(data: ScheduleIn, db: Session = Depends(get_db), admin=Depend
 
 @router.get("/dates")
 def lavka_dates(db: Session = Depends(get_db), user=Depends(auth.get_current_user)):
-    """Даты поставки с заказами, новые сверху: для выбора дня на странице."""
+    """Даты поставки с заказами: точки в календаре выбора периода."""
     rows = (db.query(database.LavkaOrder.delivery_date, func.count(database.LavkaOrder.id),
-                     func.sum(database.LavkaOrder.total_quantity), func.sum(database.LavkaOrder.total_gross))
+                     func.sum(database.LavkaOrder.total_quantity))
             .group_by(database.LavkaOrder.delivery_date)
-            .order_by(database.LavkaOrder.delivery_date.desc())
-            .limit(120).all())
-    return [{"date": d.isoformat(), "orders": n, "quantity": int(q or 0), "gross": _money(g)} for d, n, q, g in rows]
+            .order_by(database.LavkaOrder.delivery_date).all())
+    return [{"date": d.isoformat(), "orders": n, "quantity": int(q or 0)} for d, n, q in rows]
 
 
-@router.get("/orders")
-def lavka_orders(day: date, db: Session = Depends(get_db), user=Depends(auth.get_current_user)):
-    """Заказы на дату поставки: по точкам и сводка по товарам со сверкой по штрих-коду."""
-    orders = (db.query(database.LavkaOrder)
-              .options(joinedload(database.LavkaOrder.point), selectinload(database.LavkaOrder.lines))
-              .filter(database.LavkaOrder.delivery_date == day)
-              .all())
-    orders.sort(key=lambda o: (o.point.name or "").lower())
+MONTHS_GEN = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа",
+              "сентября", "октября", "ноября", "декабря"]
 
-    barcodes = {line.barcode for order in orders for line in order.lines if line.barcode}
+
+def format_range(start: date, end: date) -> str:
+    if start == end:
+        return f"{start.day} {MONTHS_GEN[start.month - 1]} {start.year}"
+    if start.year == end.year and start.month == end.month:
+        return f"{start.day}–{end.day} {MONTHS_GEN[end.month - 1]} {end.year}"
+    if start.year == end.year:
+        return f"{start.day} {MONTHS_GEN[start.month - 1]} – {end.day} {MONTHS_GEN[end.month - 1]} {end.year}"
+    return f"{format_range(start, start)} – {format_range(end, end)}"
+
+
+def compare_range(start: date, end: date, last: Optional[date]) -> Tuple[date, date, str]:
+    """С чем сравнивать. Перенесено из ka-webapp.
+
+    День — с тем же днём недели неделей раньше: у заказов недельный ритм, и
+    вторник против понедельника показывал бы рост на пустом месте.
+    Период — с таким же по длине отрезком прямо перед ним. Текущий период
+    обычно не дожит до конца, поэтому от прошлого берём столько же дней,
+    сколько уже есть данных в текущем, иначе всегда было бы «падение».
+    """
+    if start == end:
+        day = start - timedelta(days=7)
+        return day, day, f"тот же день недели неделей раньше, {format_range(day, day)}"
+    span = (end - start).days + 1
+    cmp_from, cmp_to = start - timedelta(days=span), start - timedelta(days=1)
+    # Целый календарный месяц сравниваем с прошлым календарным месяцем
+    if start.day == 1 and (end + timedelta(days=1)).day == 1 and end.month == start.month:
+        cmp_to = start - timedelta(days=1)
+        cmp_from = cmp_to.replace(day=1)
+    label = format_range(cmp_from, cmp_to)
+    if last is not None and start <= last < end:
+        cut = min(cmp_to, cmp_from + (last - start))
+        if cut < cmp_to:
+            cmp_to = cut
+            label = format_range(cmp_from, cmp_to) + ": столько же дней, сколько прошло в текущем"
+    return cmp_from, cmp_to, label
+
+
+def _totals(db: Session, start: date, end: date) -> Dict:
+    order, line = database.LavkaOrder, database.LavkaOrderLine
+    row = (db.query(func.count(func.distinct(order.id)), func.count(func.distinct(order.point_id)),
+                    func.count(func.distinct(line.barcode)), func.coalesce(func.sum(line.quantity), 0),
+                    func.coalesce(func.sum(line.sum_gross), 0))
+           .join(line, line.order_id == order.id)
+           .filter(order.delivery_date.between(start, end)).one())
+    return {"orders": row[0], "points": row[1], "items": row[2], "quantity": int(row[3] or 0), "gross": _money(row[4])}
+
+
+def _items(db: Session, start: date, end: date) -> List[Dict]:
+    """Сводная номенклатура за период. Группировка по штрих-коду: Лавка может
+    слегка поменять название, и позиция разъехалась бы на две строки."""
+    order, line = database.LavkaOrder, database.LavkaOrderLine
+    rows = (db.query(line.barcode, func.max(line.name), func.sum(line.quantity), func.sum(line.sum_gross),
+                     func.count(func.distinct(order.point_id)), func.max(line.lavka_id))
+            .join(order, line.order_id == order.id)
+            .filter(order.delivery_date.between(start, end))
+            .group_by(line.barcode).all())
+    return [{"barcode": b, "name": n, "quantity": int(q or 0), "gross": _money(g), "points": p, "lavka_id": l}
+            for b, n, q, g, p, l in rows]
+
+
+def sort_key(name: str, quantity: int) -> tuple:
+    """«По виду изделия», как в ka-webapp: вид — первое слово, внутри вида больше сверху.
+    «ё» как «е», иначе она уезжает в конец алфавита."""
+    cleaned = (name or "").strip().lower().replace("ё", "е")
+    head = cleaned.split()[0].strip(".,;:«»\"'") if cleaned.split() else ""
+    return head, -quantity, cleaned
+
+
+@router.get("/summary")
+def lavka_summary(start: date, end: date, db: Session = Depends(get_db), user=Depends(auth.get_current_user)):
+    """Заказы за день или период: итоги, сравнение и номенклатура со сверкой по штрих-коду."""
+    if end < start:
+        start, end = end, start
+    if (end - start).days > 400:
+        raise HTTPException(status_code=400, detail="Период длиннее года")
+    last = db.query(func.max(database.LavkaOrder.delivery_date)).scalar()
+    cmp_from, cmp_to, cmp_label = compare_range(start, end, last)
+
+    items = _items(db, start, end)
+    previous = {i["barcode"]: i["quantity"] for i in _items(db, cmp_from, cmp_to)}
+    barcodes_now = {i["barcode"] for i in items if i["barcode"]}
     products = {}
-    if barcodes:
-        for product in db.query(database.Product).filter(database.Product.barcode.in_(barcodes)):
+    if barcodes_now:
+        for product in db.query(database.Product).filter(database.Product.barcode.in_(barcodes_now)):
             products[product.barcode] = {"id": product.id, "title": product_title(product)}
+    for item in items:
+        was = previous.get(item["barcode"])
+        item["was"] = was
+        item["delta"] = round((item["quantity"] - was) / was * 100, 1) if was else None
+        item["product"] = products.get(item["barcode"])
+    items.sort(key=lambda i: sort_key(i["name"], i["quantity"]))
 
-    items = defaultdict(lambda: {"quantity": 0, "gross": Decimal(0), "points": 0})
-    out_orders = []
-    for order in orders:
-        lines = []
-        for line in order.lines:
-            item = items[line.barcode]
-            item.update(barcode=line.barcode, name=line.name, lavka_id=line.lavka_id, product=products.get(line.barcode))
-            item["quantity"] += line.quantity
-            item["gross"] += Decimal(line.sum_gross or 0)
-            item["points"] += 1
-            lines.append({
-                "barcode": line.barcode, "name": line.name, "lavka_id": line.lavka_id, "quantity": line.quantity,
-                "price_gross": _money(line.price_gross), "sum_gross": _money(line.sum_gross),
-                "product": products.get(line.barcode),
-            })
-        out_orders.append({
-            "id": order.id, "order_no": order.order_no,
-            "order_date": order.order_date.isoformat() if order.order_date else None,
-            "point": {"id": order.point.id, "external_id": order.point.external_id,
-                      "name": order.point.name, "address": order.point.address},
-            "total_quantity": order.total_quantity, "total_net": _money(order.total_net),
-            "total_gross": _money(order.total_gross),
-            "revised_at": order.revised_at.isoformat(timespec="seconds") if order.revised_at else None,
-            "imported_at": order.imported_at.isoformat(timespec="seconds") if order.imported_at else None,
-            "source_filename": order.source_filename,
-            "lines": lines,
-        })
-
-    summary = sorted(
-        ({**v, "gross": _money(v["gross"])} for v in items.values()),
-        key=lambda v: v["name"].lower(),
-    )
+    revised = (db.query(func.count(database.LavkaOrder.id))
+               .filter(database.LavkaOrder.delivery_date.between(start, end),
+                       database.LavkaOrder.revised_at.isnot(None)).scalar())
     return {
-        "date": day.isoformat(),
-        "orders": out_orders,
-        "items": summary,
-        "totals": {
-            "orders": len(out_orders),
-            "quantity": sum(o["total_quantity"] for o in out_orders),
-            "gross": _money(sum((Decimal(str(o["total_gross"])) for o in out_orders), Decimal(0))),
-            "unmatched": sum(1 for v in summary if not v["product"]),
-        },
+        "start": start.isoformat(), "end": end.isoformat(), "label": format_range(start, end),
+        "compare": {"start": cmp_from.isoformat(), "end": cmp_to.isoformat(), "label": cmp_label,
+                    "totals": _totals(db, cmp_from, cmp_to)},
+        "totals": _totals(db, start, end),
+        "unmatched": sum(1 for i in items if not i["product"]),
+        "revised": revised,
+        "items": items,
     }
 
 
@@ -267,3 +319,132 @@ def lavka_link(data: LinkIn, db: Session = Depends(get_db), admin=Depends(auth.a
     product.barcode = barcode
     db.commit()
     return {"product": {"id": product.id, "title": product_title(product)}, "created": False}
+
+
+# --- Лист номенклатуры (как в ka-webapp: HTML для предпросмотра, PDF через WeasyPrint) ---
+
+SHEET_SORTS = [
+    ("kind", "По виду изделия"),
+    ("qty_desc", "По количеству, больше сверху"),
+    ("qty_asc", "По количеству, меньше сверху"),
+    ("alpha", "По алфавиту"),
+    ("sum_desc", "По стоимости, дороже сверху"),
+    ("sum_asc", "По стоимости, дешевле сверху"),
+]
+DEFAULT_SORT = "kind"
+
+# Геометрия половины листа в мм, из ka-webapp: A4 альбомная — 210 мм, поля по 7 мм,
+# шапка с логотипом и датой — 17 мм. Строка при кегле 1 pt замерена по готовой вёрстке
+SHEET_ROWS_MM = 210 - 7 * 2 - 17 - 1
+HEADER_ROWS = 1
+ROW_MM_PER_PT = 0.656
+ROW_MM_CONST = 0.18
+MIN_FONT_PT, MAX_FONT_PT = 5.5, 13.0
+
+STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+_sheet_env = Environment(loader=FileSystemLoader(Path(__file__).resolve().parent / "templates"),
+                         autoescape=select_autoescape(["html"]))
+
+
+# Ширина колонки названия в мм: половина листа (297 − 2×8 полей − 2×7 у линии реза) / 2
+# минус клетка под галочку (2,2 em) и колонка количества (13 мм)
+HALF_WIDTH_MM = (297 - 16 - 14) / 2
+NUM_COL_MM = 13
+AVG_CHAR_EM = 0.5        # средняя ширина буквы Arial в кириллице, в долях кегля
+PT_MM = 0.3528
+LINE_MM_PER_PT = 1.2 * PT_MM   # каждая лишняя строка переноса
+
+
+def _lines(name: str, pt: float) -> int:
+    width = HALF_WIDTH_MM - NUM_COL_MM - 2.9 * pt * PT_MM
+    per_line = max(10, int(width / (AVG_CHAR_EM * pt * PT_MM)))
+    return max(1, -(-len(name or "") // per_line))
+
+
+def fit_font_pt(names: List[str]) -> float:
+    """Кегль, при котором список занимает половину листа почти целиком.
+
+    В ka-webapp строка считалась одной: названия там короче 46 знаков. У Обеда
+    названия до 80 знаков и переносятся, поэтому учитываем и строки переноса,
+    иначе большой заказ уезжал бы на вторую страницу.
+    """
+    if not names:
+        return MAX_FONT_PT
+    pt = MAX_FONT_PT
+    while pt > MIN_FONT_PT:
+        height = (len(names) + HEADER_ROWS) * (pt * ROW_MM_PER_PT + ROW_MM_CONST)
+        height += sum(_lines(n, pt) - 1 for n in names) * pt * LINE_MM_PER_PT
+        if height <= SHEET_ROWS_MM:
+            break
+        pt = round(pt - 0.1, 1)
+    return max(pt, MIN_FONT_PT)
+
+
+def _alpha(name: str) -> str:
+    return (name or "").strip().lower().replace("ё", "е")
+
+
+def sort_items(items: List[Dict], mode: str) -> List[Dict]:
+    if mode == "qty_desc":
+        return sorted(items, key=lambda i: (-i["quantity"], _alpha(i["name"])))
+    if mode == "qty_asc":
+        return sorted(items, key=lambda i: (i["quantity"], _alpha(i["name"])))
+    if mode == "alpha":
+        return sorted(items, key=lambda i: _alpha(i["name"]))
+    if mode == "sum_desc":
+        return sorted(items, key=lambda i: (-i["gross"], _alpha(i["name"])))
+    if mode == "sum_asc":
+        return sorted(items, key=lambda i: (i["gross"], _alpha(i["name"])))
+    return sorted(items, key=lambda i: sort_key(i["name"], i["quantity"]))
+
+
+def _sheet_label(start: date, end: date) -> str:
+    if start == end:
+        return start.strftime("%d.%m.%y")
+    if start.year == end.year:
+        return f"{start.strftime('%d.%m')}–{end.strftime('%d.%m.%y')}"
+    return f"{start.strftime('%d.%m.%y')}–{end.strftime('%d.%m.%y')}"
+
+
+def _render_sheet(db: Session, start: date, end: date, left: str, right: str, mode: str, logo: str) -> Tuple[str, str]:
+    if end < start:
+        start, end = end, start
+    modes = dict(SHEET_SORTS)
+    left = left if left in modes else DEFAULT_SORT
+    right = right if right in modes else left
+    items = _items(db, start, end)
+    label = _sheet_label(start, end)
+    html = _sheet_env.get_template("lavka_sheet.html").render(
+        mode=mode, logo_src=logo, day_label=label,
+        items_left=sort_items(items, left), items_right=sort_items(items, right),
+        font_pt=fit_font_pt([i["name"] for i in items]), total_quantity=sum(i["quantity"] for i in items),
+    )
+    return html, label
+
+
+@router.get("/sheet/sorts")
+def lavka_sheet_sorts(user=Depends(auth.get_current_user)):
+    return [{"value": v, "label": l} for v, l in SHEET_SORTS]
+
+
+@router.get("/sheet.html", response_class=HTMLResponse)
+def lavka_sheet_html(start: date, end: date, left: str = "", right: str = "",
+                     db: Session = Depends(get_db), user=Depends(auth.get_current_user)):
+    """Предпросмотр листа: та же вёрстка, что уходит в PDF."""
+    html, _ = _render_sheet(db, start, end, left, right, "preview", "/static/img/logo-bw.svg")
+    return HTMLResponse(html)
+
+
+@router.get("/sheet.pdf")
+def lavka_sheet_pdf(start: date, end: date, left: str = "", right: str = "",
+                    db: Session = Depends(get_db), user=Depends(auth.get_current_user)):
+    # Логотип путём к файлу: по http WeasyPrint постучался бы в это же приложение
+    html, label = _render_sheet(db, start, end, left, right, "pdf", (STATIC_DIR / "img" / "logo-bw.svg").as_uri())
+    try:
+        from weasyprint import HTML  # тяжёлая библиотека, без Pango падает с OSError
+    except (ImportError, OSError) as exc:
+        raise HTTPException(status_code=503, detail=f"Не удалось собрать PDF: на сервере нет библиотек вёрстки ({exc.__class__.__name__})")
+    pdf = HTML(string=html, base_url=str(STATIC_DIR)).write_pdf()
+    name = f"Яндекс {label} номенклатура.pdf"
+    return Response(pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f"inline; filename*=UTF-8''{quote(name)}"})
