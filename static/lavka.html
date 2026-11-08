@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=1.15.2">
+    <link rel="stylesheet" href="/static/style.css?v=1.15.3">
     <link rel="expect" href="#hubEnd" blocking="render">
 </head>
 <body>
@@ -82,25 +82,22 @@
                     <span class="eyebrow">Лист на производство</span>
                     <h2 class="card-title-small" id="sheetTitle">Номенклатура</h2>
                 </div>
-                <div class="sheet-modal-actions">
-                    <button type="button" class="btn btn-primary" id="sheetPrint">Печать</button>
-                    <button type="button" class="icon-btn" id="sheetClose" aria-label="Закрыть">&times;</button>
-                </div>
+                <button type="button" class="icon-btn" id="sheetClose" aria-label="Закрыть">&times;</button>
             </header>
-            <div class="sheet-sorts">
-                <label>Левая половина<select id="sortLeft" class="styled-text-input"></select></label>
-                <label>Правая половина<select id="sortRight" class="styled-text-input"></select></label>
+            <div class="sheet-toolbar">
+                <select id="sheetSort" class="styled-text-input" aria-label="Сортировка листа"></select>
+                <button type="button" class="btn btn-primary" id="sheetPrint">Печать</button>
             </div>
             <div class="sheet-stage" id="sheetStage">
                 <iframe id="sheetFrame" title="Предпросмотр листа номенклатуры"></iframe>
             </div>
-            <p class="field-hint sheet-hint">A4 альбомный, два экземпляра рядом: лист режется по пунктиру. В окне печати выберите альбомную ориентацию, если принтер не возьмёт её сам.</p>
+            <p class="field-hint sheet-hint">A4 альбомный, две одинаковые половины: лист режется по пунктиру. Если принтер не возьмёт альбомную ориентацию сам, выберите её в окне печати.</p>
         </div>
     </div>
 
     <script src="/static/hub-ui.js?v=1.10.0"></script>
     <script src="/static/period-picker.js?v=1.15.0"></script>
-    <script src="/static/lavka-sheet.js?v=1.15.2"></script>
+    <script src="/static/lavka-sheet.js?v=1.16.0"></script>
     <script src="/static/lavka.js?v=1.15.1"></script>
     <div id="hubEnd" hidden></div>
 </body>

@@ -1,36 +1,46 @@
 // Окно «Номенклатура»: предпросмотр печатного листа и печать PDF.
-// Вёрстку и PDF собирает сервер (WeasyPrint), как в ka-webapp; здесь только выбор сортировок и показ.
+// Вёрстку и PDF собирает сервер (WeasyPrint), как в ka-webapp; здесь только выбор сортировки и показ.
+// Обе половины листа сортируются одинаково.
 window.LavkaSheet = (() => {
-    const STORAGE_KEY = 'obed_lavka_sheet_sorts';
-    let modal, frame, stage, left, right, title, printBtn;
+    const STORAGE_KEY = 'obed_lavka_sheet_sort';
+    const OLD_KEY = 'obed_lavka_sheet_sorts';   // было: отдельно левая и правая половины
+    const SHEET_W = 297 * 96 / 25.4;            // A4 альбомный в CSS-пикселях
+    const SHEET_H = 210 * 96 / 25.4;
+    let modal, box, frame, stage, sort, title, printBtn;
     let period = null;      // { start, end, label, quantity }
     let sortsLoaded = false;
 
     function saved() {
-        try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch { return {}; }
+        try {
+            const value = localStorage.getItem(STORAGE_KEY);
+            if (value) return value;
+            return (JSON.parse(localStorage.getItem(OLD_KEY)) || {}).left || null;
+        } catch { return null; }
     }
 
     function remember() {
-        try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ left: left.value, right: right.value })); } catch { /* приватный режим */ }
+        try { localStorage.setItem(STORAGE_KEY, sort.value); } catch { /* приватный режим */ }
     }
 
     function query() {
-        const p = new URLSearchParams({ start: period.start, end: period.end, left: left.value, right: right.value });
-        return p.toString();
+        return new URLSearchParams({ start: period.start, end: period.end, left: sort.value, right: sort.value }).toString();
     }
 
-    // Лист 297×210 мм вписываем в ширину окна, сохраняя пропорции
+    // Окно подстраивается под лист: лист занимает всю ширину между отступами окна,
+    // а ширина окна выбирается так, чтобы лист целиком помещался и по высоте экрана
     function fit() {
-        const sheetWidth = 297 * 96 / 25.4;
-        const sheetHeight = 210 * 96 / 25.4;
-        // Вписываем и по ширине, и по высоте окна: лист должен быть виден целиком
-        const room = window.innerHeight - 290;
-        const scale = Math.min(1, (stage.parentElement.clientWidth - 2) / sheetWidth, Math.max(room, 240) / sheetHeight);
-        stage.style.width = `${sheetWidth * scale + 2}px`;
-        frame.style.width = `${sheetWidth}px`;
-        frame.style.height = `${sheetHeight}px`;
+        const css = getComputedStyle(box);
+        const padX = parseFloat(css.paddingLeft) + parseFloat(css.paddingRight);
+        const chrome = box.offsetHeight - stage.offsetHeight;   // шапка, панель, подсказка, отступы
+        const byHeight = (window.innerHeight - 48 - chrome) * SHEET_W / SHEET_H;
+        const byWidth = window.innerWidth - 48 - padX;
+        const inner = Math.max(320, Math.min(byWidth, byHeight, SHEET_W));
+        box.style.width = `${inner + padX}px`;
+        const scale = inner / SHEET_W;
+        frame.style.width = `${SHEET_W}px`;
+        frame.style.height = `${SHEET_H}px`;
         frame.style.transform = `scale(${scale})`;
-        stage.style.height = `${sheetHeight * scale}px`;
+        stage.style.height = `${SHEET_H * scale}px`;
     }
 
     function load() {
@@ -42,12 +52,9 @@ window.LavkaSheet = (() => {
     async function loadSorts() {
         if (sortsLoaded) return;
         const sorts = await Hub.api('/api/v1/lavka/sheet/sorts');
-        const html = sorts.map(s => `<option value="${s.value}">${Hub.esc(s.label)}</option>`).join('');
-        left.innerHTML = html;
-        right.innerHTML = html;
+        sort.innerHTML = sorts.map(s => `<option value="${s.value}">${Hub.esc(s.label)}</option>`).join('');
         const remembered = saved();
-        if (remembered.left && sorts.some(s => s.value === remembered.left)) left.value = remembered.left;
-        if (remembered.right && sorts.some(s => s.value === remembered.right)) right.value = remembered.right;
+        if (remembered && sorts.some(s => s.value === remembered)) sort.value = remembered;
         sortsLoaded = true;
     }
 
@@ -88,15 +95,14 @@ window.LavkaSheet = (() => {
 
     function init() {
         modal = document.getElementById('sheetModal');
+        box = modal.querySelector('.sheet-modal');
         frame = document.getElementById('sheetFrame');
         stage = document.getElementById('sheetStage');
-        left = document.getElementById('sortLeft');
-        right = document.getElementById('sortRight');
+        sort = document.getElementById('sheetSort');
         title = document.getElementById('sheetTitle');
         printBtn = document.getElementById('sheetPrint');
 
-        left.addEventListener('change', () => { remember(); load(); });
-        right.addEventListener('change', () => { remember(); load(); });
+        sort.addEventListener('change', () => { remember(); load(); });
         printBtn.addEventListener('click', print);
         document.getElementById('sheetClose').addEventListener('click', () => Hub.closeModal(modal));
         window.addEventListener('resize', () => { if (modal.classList.contains('open')) fit(); });
@@ -112,7 +118,7 @@ window.LavkaSheet = (() => {
             return;
         }
         Hub.openModal(modal);
-        requestAnimationFrame(fit);
+        fit();
         load();
     }
 

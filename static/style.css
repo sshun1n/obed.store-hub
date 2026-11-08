@@ -1881,14 +1881,14 @@ textarea.styled-text-input { resize: vertical; min-height: 64px; line-height: 1.
 .lavka-items table { min-width: 880px; }
 
 /* Окно листа номенклатуры */
-.modal-content.sheet-modal { max-width: 1180px; width: calc(100vw - 48px); display: flex; flex-direction: column; gap: 14px; }
+/* Ширину окна задаёт lavka-sheet.js: лист вписан в окно по ширине ровно по внутренним отступам */
+.modal-content.sheet-modal { max-width: none; width: calc(100vw - 48px); display: flex; flex-direction: column; gap: 14px; }
 .sheet-modal-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
 .sheet-modal-head .eyebrow { display: block; margin-bottom: 4px; }
-.sheet-modal-actions { display: flex; gap: 8px; align-items: center; }
-.sheet-sorts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.sheet-sorts label { display: flex; flex-direction: column; gap: 4px; font-family: var(--mono); font-size: 0.64rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
-.sheet-sorts select { font-family: inherit; text-transform: none; letter-spacing: 0; width: 100%; }
-.sheet-stage { position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 6px; background: #E9E6DF; transition: opacity 0.15s; }
+.sheet-toolbar { display: flex; gap: 10px; }
+.sheet-toolbar select { flex: 1; min-width: 0; height: 42px; }
+.sheet-toolbar .btn { height: 42px; min-width: 150px; padding-top: 0; padding-bottom: 0; }
+.sheet-stage { position: relative; overflow: hidden; width: 100%; box-shadow: 0 0 0 1px var(--line); border-radius: 2px; background: #fff; transition: opacity 0.15s; }
 .sheet-stage.loading { opacity: 0.55; }
 .sheet-stage iframe { position: absolute; top: 0; left: 0; border: none; background: #fff; transform-origin: 0 0; }
 .sheet-hint { margin: 0; }
@@ -1899,9 +1899,8 @@ textarea.styled-text-input { resize: vertical; min-height: 64px; line-height: 1.
     .period-picker { width: 100%; }
     .period-btn { flex: 1; min-width: 0; }
     .period-pop { left: 0; right: 0; width: auto; }
-    .sheet-sorts { grid-template-columns: 1fr; }
+    .sheet-toolbar .btn { min-width: 0; }
 }
 .lavka-unmatched { display: flex; align-items: center; gap: 8px; margin-top: 5px; }
 .lavka-unmatched .lavka-link-btn { margin-left: 0; }
-.sheet-stage { align-self: center; width: 100%; }
 .pp-hint:empty { display: none; }

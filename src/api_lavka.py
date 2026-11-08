@@ -431,7 +431,7 @@ def lavka_sheet_sorts(user=Depends(auth.get_current_user)):
 def lavka_sheet_html(start: date, end: date, left: str = "", right: str = "",
                      db: Session = Depends(get_db), user=Depends(auth.get_current_user)):
     """Предпросмотр листа: та же вёрстка, что уходит в PDF."""
-    html, _ = _render_sheet(db, start, end, left, right, "preview", "/static/img/logo-bw.svg")
+    html, _ = _render_sheet(db, start, end, left, right, "preview", "/static/img/obed-logo.svg")
     return HTMLResponse(html)
 
 
