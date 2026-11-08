@@ -1715,3 +1715,28 @@ textarea.styled-text-input { resize: vertical; min-height: 64px; line-height: 1.
 @media (max-width: 760px) {
     .mail-actions .btn { flex: 1; }
 }
+
+/* Перевозчики и юрлица */
+.party-table table { min-width: 820px; }
+.party-table td { vertical-align: top; }
+.party-table th.num, .party-table td.num { text-align: right !important; white-space: nowrap; }
+.party-table .actions-col { width: 1%; white-space: nowrap; text-align: right !important; }
+.party-table .actions-col .btn + .btn { margin-left: 6px; }
+.cell-main { font-weight: 600; line-height: 1.35; }
+.cell-main .badge { margin-left: 4px; }
+.cell-sub { margin-top: 3px; font-size: 0.76rem; color: var(--muted); line-height: 1.4; }
+.cell-wrap { max-width: 34ch; line-height: 1.4; }
+.mono-cell { font-family: var(--mono); font-size: 0.74rem; line-height: 1.6; }
+.mono-cell.cell-sub { word-break: break-all; }
+.mono-input { font-family: var(--mono); letter-spacing: 0.02em; }
+.party-modal { max-width: 720px; }
+.party-modal .seg { align-self: flex-start; }
+.party-modal .form-subhead-sm { margin-bottom: 0; }
+.party-section + .party-section { margin-top: 36px; }
+.party-section-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 14px; flex-wrap: wrap; }
+.party-section-head .subtitle { margin-top: 4px; }
+.party-modal [hidden] { display: none !important; }
+.party-section .party-table table { table-layout: fixed; }
+.party-section .party-table th:nth-child(1) { width: 30% !important; }
+.party-section .party-table th:nth-child(2) { width: 22% !important; }
+.party-section .party-table th:nth-child(4) { width: 300px !important; }

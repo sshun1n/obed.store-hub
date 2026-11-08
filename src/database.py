@@ -139,6 +139,74 @@ class MailSettings(Base):
     check_ok = Column(Boolean, nullable=True)
     check_message = Column(String, nullable=True)
 
+# --- ЮРЛИЦА И ПЕРЕВОЗЧИКИ (Яндекс.Лавка и СБИС) ---
+
+class LegalEntity(Base):
+    # Стороны документов: role='own' — мы (продавец, грузоотправитель),
+    # role='buyer' — покупатель и грузополучатель (ООО «Яндекс.Лавка»).
+    # Реквизиты здесь, а не в коде: юрлиц может стать несколько
+    __tablename__ = "legal_entities"
+
+    id = Column(Integer, primary_key=True, index=True)
+    role = Column(String(10), nullable=False, default="own")
+    kind = Column(String(10), nullable=False, default="ИП")  # 'ИП' | 'ЮЛ'
+    name = Column(String(200), nullable=False)               # короткое имя для списков
+    full_name = Column(String(300), nullable=True)           # полное наименование ЮЛ
+    inn = Column(String(12), nullable=False, index=True)
+    kpp = Column(String(9), nullable=True)                   # только у ЮЛ
+    ogrn = Column(String(15), nullable=True)                 # ОГРН или ОГРНИП
+    last_name = Column(String(80), nullable=True)            # ФИО — только у ИП
+    first_name = Column(String(80), nullable=True)
+    middle_name = Column(String(80), nullable=True)
+    address = Column(String(400), nullable=True)
+    phone = Column(String(50), nullable=True)                # обязателен для ЭТрН по ФЛК
+    email = Column(String(150), nullable=True)
+    # Идентификатор ящика ЭДО. У Лавки ЭТрН уходят в Контур, без него СБИС выберет свой ящик
+    edo_id = Column(String(100), nullable=True)
+    is_default = Column(Boolean, default=False, nullable=False)  # подставляется в документы по умолчанию
+    is_active = Column(Boolean, default=True, nullable=False)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class Carrier(Base):
+    # Перевозчик: кто везёт заказы до лавок. Машина и права — тут же.
+    # Перенесено из ka-webapp, у Обеда перевозчик свой
+    __tablename__ = "carriers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False)        # как показываем в списках
+    kind = Column(String(10), nullable=False, default="ИП")  # 'ИП' | 'ЮЛ' | 'ФЛ'
+    inn = Column(String(12), nullable=False, index=True)
+    ogrn = Column(String(15), nullable=True)
+    kpp = Column(String(9), nullable=True)
+    last_name = Column(String(80), nullable=True)
+    first_name = Column(String(80), nullable=True)
+    middle_name = Column(String(80), nullable=True)
+    birth_date = Column(Date, nullable=True)
+    birth_place = Column(String(200), nullable=True)
+    phone = Column(String(50), nullable=True)
+    email = Column(String(150), nullable=True)
+    address = Column(String(300), nullable=True)
+
+    vehicle_model = Column(String(120), nullable=True)
+    vehicle_plate = Column(String(20), nullable=True)
+    vehicle_type = Column(String(60), nullable=False, default="легковая")
+    body_type = Column(String(60), nullable=False, default="закрытый")
+    loading_type = Column(String(60), nullable=False, default="ручная")
+    capacity_t = Column(Float, nullable=True)          # грузоподъёмность, т
+    volume_m3 = Column(Float, nullable=True)           # вместимость, м³
+
+    licence_number = Column(String(30), nullable=True)
+    licence_from = Column(Date, nullable=True)
+    licence_to = Column(Date, nullable=True)
+    licence_region = Column(String(120), nullable=True)
+    licence_categories = Column(String(60), nullable=True)
+    licence_gibdd = Column(String(20), nullable=True)
+
+    is_active = Column(Boolean, default=True, nullable=False)  # «Скрыть» вместо удаления
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 # --- МОДЕЛИ УЧЁТА РАБОЧЕГО ВРЕМЕНИ ---
 
 class Employee(Base):
@@ -311,11 +379,36 @@ def _unlink_manual_products():
         conn.execute(text("ALTER TABLE products ALTER COLUMN name_from_sheet DROP NOT NULL"))
         conn.execute(text("UPDATE products SET name_from_sheet = NULL WHERE source = 'manual'"))
 
+# ООО «Яндекс.Лавка» — покупатель и грузополучатель. Реквизиты из её требований
+# к ЭТрН (сентябрь 2026), те же, что в ka-webapp. Адрес юридический
+YANDEX_LAVKA = dict(
+    role="buyer", kind="ЮЛ", name="Яндекс.Лавка", full_name="ООО «Яндекс.Лавка»",
+    inn="9718101499", kpp="770301001",
+    address="г. Москва, муниципальный округ Пресненский вн.тер.г., 1-й Красногвардейский пр-д, "
+            "д. 22, стр. 1, ЭТАЖ 12, ПОМЕЩ. 12-40, 123112",
+    phone="+7 (800) 770-04-60",
+    edo_id="2BM-9718101499-770501001-201807120551103851590",
+    is_default=True,
+    notes="КПП в идентификаторе ящика (770501001) отличается от КПП в реквизитах (770301001): "
+          "так и в ka-webapp, где документы проходят. Ящик — в Контуре.",
+)
+
+def _seed_buyer():
+    # Покупатель нужен сразу: без него не собрать ни один документ
+    db = SessionLocal()
+    try:
+        if not db.query(LegalEntity).filter(LegalEntity.role == "buyer").first():
+            db.add(LegalEntity(**YANDEX_LAVKA))
+            db.commit()
+    finally:
+        db.close()
+
 def init_db():
     # Создает недостающие таблицы и колонки (идемпотентно)
     Base.metadata.create_all(bind=engine)
     _add_missing_columns()
     _unlink_manual_products()
+    _seed_buyer()
 
 def get_db():
     # Зависимость для эндпоинтов (управление сессиями)

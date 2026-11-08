@@ -59,9 +59,12 @@
                 ${link('/orders', '02', 'Заказы по точкам')}
                 ${isAdmin ? link('/timesheet', '03', 'Учёт времени') : ''}
                 ${isAdmin ? link('/employees', '04', 'Сотрудники', ['/employee']) : ''}
+                <div class="side-caption">Лавка и СБИС</div>
+                ${link('/carriers', '05', 'Перевозчики')}
+                ${link('/entities', '06', 'Юрлица')}
                 <div class="side-caption">Система</div>
-                ${link('/management', '05', 'Продукция')}
-                ${isAdmin ? link('/admin', '06', 'Админ-панель') : ''}
+                ${link('/management', '07', 'Продукция')}
+                ${isAdmin ? link('/admin', '08', 'Админ-панель') : ''}
             </nav>
             <div class="side-user">
                 ${currentUser ? `

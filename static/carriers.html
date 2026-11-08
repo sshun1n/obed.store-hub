@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Перевозчики | OBED.STORE Hub</title>
+    <link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css?v=1.12.2">
+    <link rel="expect" href="#hubEnd" blocking="render">
+</head>
+<body>
+    <script src="/static/components.js?v=1.12.0"></script>
+    <div class="container">
+        <header class="page-header page-head-row">
+            <div>
+                <span class="eyebrow">Лавка и СБИС</span>
+                <h1>Перевозчики</h1>
+                <p class="subtitle">Кто везёт заказы до лавок. Машина и права нужны для заказа на перевозку и ЭТрН.</p>
+            </div>
+            <button type="button" class="btn btn-primary" id="addBtn" hidden>+ Перевозчик</button>
+        </header>
+
+        <div class="controls-panel">
+            <div class="input-group">
+                <div class="seg" id="activeFilter">
+                    <button type="button" class="seg-btn active" data-active="1">Активные</button>
+                    <button type="button" class="seg-btn" data-active="0">Скрытые</button>
+                </div>
+                <span class="status-text text-muted" id="countText"></span>
+            </div>
+        </div>
+
+        <div class="table-wrapper data-table party-table">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Перевозчик</th>
+                        <th>Машина</th>
+                        <th class="num">Грузоподъёмность</th>
+                        <th>Права до</th>
+                        <th class="actions-col"></th>
+                    </tr>
+                </thead>
+                <tbody id="listBody">
+                    <tr><td colspan="5" class="empty-state">Загрузка…</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="modal" id="carrierModal">
+        <div class="modal-content modal-wide party-modal" role="dialog" aria-modal="true" aria-labelledby="carrierTitle">
+            <h2 class="card-title-small" id="carrierTitle">Перевозчик</h2>
+            <form id="carrierForm" class="form-layout" autocomplete="off" novalidate>
+                <h3 class="form-subhead-sm">Кто везёт</h3>
+                <div class="seg" id="kindSeg" role="radiogroup" aria-label="Форма">
+                    <button type="button" class="seg-btn" data-kind="ИП">ИП</button>
+                    <button type="button" class="seg-btn" data-kind="ЮЛ">Организация</button>
+                    <button type="button" class="seg-btn" data-kind="ФЛ">Физлицо</button>
+                </div>
+                <div class="form-grid-3">
+                    <div class="form-group"><label class="control-label" for="cLast">Фамилия</label><input id="cLast" name="last_name" class="styled-text-input"></div>
+                    <div class="form-group"><label class="control-label" for="cFirst">Имя</label><input id="cFirst" name="first_name" class="styled-text-input"></div>
+                    <div class="form-group"><label class="control-label" for="cMiddle">Отчество</label><input id="cMiddle" name="middle_name" class="styled-text-input"></div>
+                </div>
+                <div class="form-group">
+                    <label class="control-label" for="cName">Название в списках</label>
+                    <input id="cName" name="name" class="styled-text-input" placeholder="Пусто — по ФИО">
+                </div>
+                <div class="form-grid-3">
+                    <div class="form-group"><label class="control-label" for="cInn">ИНН</label><input id="cInn" name="inn" class="styled-text-input mono-input" inputmode="numeric" maxlength="12"></div>
+                    <div class="form-group"><label class="control-label" for="cOgrn" id="cOgrnLabel">ОГРНИП</label><input id="cOgrn" name="ogrn" class="styled-text-input mono-input" inputmode="numeric" maxlength="15"></div>
+                    <div class="form-group" data-only="ЮЛ"><label class="control-label" for="cKpp">КПП</label><input id="cKpp" name="kpp" class="styled-text-input mono-input" maxlength="9"></div>
+                </div>
+                <div class="form-grid-2">
+                    <div class="form-group"><label class="control-label" for="cPhone">Телефон</label><input id="cPhone" name="phone" class="styled-text-input" type="tel"></div>
+                    <div class="form-group"><label class="control-label" for="cEmail">Почта</label><input id="cEmail" name="email" class="styled-text-input" type="email"></div>
+                </div>
+                <div class="form-group"><label class="control-label" for="cAddress">Адрес</label><input id="cAddress" name="address" class="styled-text-input"></div>
+                <div class="form-grid-2" data-hide="ЮЛ">
+                    <div class="form-group"><label class="control-label" for="cBirthDate">Дата рождения</label><input id="cBirthDate" name="birth_date" type="date" class="styled-date-input"></div>
+                    <div class="form-group"><label class="control-label" for="cBirthPlace">Место рождения</label><input id="cBirthPlace" name="birth_place" class="styled-text-input"></div>
+                </div>
+
+                <hr class="form-divider">
+                <h3 class="form-subhead-sm">Машина</h3>
+                <div class="form-grid-2">
+                    <div class="form-group"><label class="control-label" for="cModel">Марка и модель</label><input id="cModel" name="vehicle_model" class="styled-text-input" placeholder="Toyota Corolla"></div>
+                    <div class="form-group"><label class="control-label" for="cPlate">Госномер</label><input id="cPlate" name="vehicle_plate" class="styled-text-input mono-input" placeholder="О987ХВ 44"></div>
+                </div>
+                <div class="form-grid-3">
+                    <div class="form-group"><label class="control-label" for="cVehicleType">Тип</label><select id="cVehicleType" name="vehicle_type" class="styled-text-input"></select></div>
+                    <div class="form-group"><label class="control-label" for="cBodyType">Кузов</label><select id="cBodyType" name="body_type" class="styled-text-input"></select></div>
+                    <div class="form-group"><label class="control-label" for="cLoadingType">Погрузка</label><select id="cLoadingType" name="loading_type" class="styled-text-input"></select></div>
+                </div>
+                <div class="form-grid-2">
+                    <div class="form-group"><label class="control-label" for="cCapacity">Грузоподъёмность, т</label><input id="cCapacity" name="capacity_t" class="styled-text-input" inputmode="decimal" placeholder="0,5"></div>
+                    <div class="form-group"><label class="control-label" for="cVolume">Объём, м³</label><input id="cVolume" name="volume_m3" class="styled-text-input" inputmode="decimal" placeholder="2,45"></div>
+                </div>
+
+                <hr class="form-divider">
+                <h3 class="form-subhead-sm">Водительское удостоверение</h3>
+                <div class="form-grid-3">
+                    <div class="form-group"><label class="control-label" for="cLicence">Номер</label><input id="cLicence" name="licence_number" class="styled-text-input mono-input"></div>
+                    <div class="form-group"><label class="control-label" for="cLicenceFrom">Выдано</label><input id="cLicenceFrom" name="licence_from" type="date" class="styled-date-input"></div>
+                    <div class="form-group"><label class="control-label" for="cLicenceTo">Действует до</label><input id="cLicenceTo" name="licence_to" type="date" class="styled-date-input"></div>
+                </div>
+                <div class="form-grid-3">
+                    <div class="form-group"><label class="control-label" for="cCategories">Категории</label><input id="cCategories" name="licence_categories" class="styled-text-input" placeholder="B, B1, M"></div>
+                    <div class="form-group"><label class="control-label" for="cRegion">Регион выдачи</label><input id="cRegion" name="licence_region" class="styled-text-input"></div>
+                    <div class="form-group"><label class="control-label" for="cGibdd">Код ГИБДД</label><input id="cGibdd" name="licence_gibdd" class="styled-text-input mono-input"></div>
+                </div>
+
+                <hr class="form-divider">
+                <div class="form-group"><label class="control-label" for="cNotes">Заметки</label><textarea id="cNotes" name="notes" class="styled-text-input" rows="2"></textarea></div>
+
+                <span class="error-msg" id="carrierError"></span>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" data-act="cancel">Отмена</button>
+                    <button type="submit" class="btn btn-primary" id="carrierSave">Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="/static/hub-ui.js?v=1.10.0"></script>
+    <script src="/static/parties.js?v=1.12.0"></script>
+    <script src="/static/carriers.js?v=1.12.1"></script>
+    <div id="hubEnd" hidden></div>
+</body>
+</html>

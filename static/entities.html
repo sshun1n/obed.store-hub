@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Юрлица | OBED.STORE Hub</title>
+    <link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css?v=1.12.2">
+    <link rel="expect" href="#hubEnd" blocking="render">
+</head>
+<body>
+    <script src="/static/components.js?v=1.12.0"></script>
+    <div class="container">
+        <header class="page-header">
+            <span class="eyebrow">Лавка и СБИС</span>
+            <h1>Юрлица</h1>
+            <p class="subtitle">Реквизиты сторон в документах: от чьего имени отгружаем и кому. Юрлицо «по умолчанию» подставляется в новые документы.</p>
+        </header>
+
+        <section class="party-section" data-role="own">
+            <div class="party-section-head">
+                <div>
+                    <h2 class="section-title">Мы</h2>
+                    <p class="subtitle">Продавец и грузоотправитель.</p>
+                </div>
+                <button type="button" class="btn btn-primary" data-act="add" hidden>+ Юрлицо</button>
+            </div>
+            <div class="table-wrapper data-table party-table">
+                <table>
+                    <thead><tr><th>Юрлицо</th><th>Реквизиты</th><th>Адрес и связь</th><th class="actions-col"></th></tr></thead>
+                    <tbody data-list="own"><tr><td colspan="4" class="empty-state">Загрузка…</td></tr></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="party-section" data-role="buyer">
+            <div class="party-section-head">
+                <div>
+                    <h2 class="section-title">Покупатели</h2>
+                    <p class="subtitle">Покупатель и грузополучатель. ЭТрН уходят в его ящик ЭДО.</p>
+                </div>
+                <button type="button" class="btn btn-secondary" data-act="add" hidden>+ Покупатель</button>
+            </div>
+            <div class="table-wrapper data-table party-table">
+                <table>
+                    <thead><tr><th>Юрлицо</th><th>Реквизиты</th><th>Адрес и связь</th><th class="actions-col"></th></tr></thead>
+                    <tbody data-list="buyer"><tr><td colspan="4" class="empty-state">Загрузка…</td></tr></tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <div class="modal" id="entityModal">
+        <div class="modal-content modal-wide party-modal" role="dialog" aria-modal="true" aria-labelledby="entityTitle">
+            <h2 class="card-title-small" id="entityTitle">Юрлицо</h2>
+            <form id="entityForm" class="form-layout" autocomplete="off" novalidate>
+                <div class="seg" id="kindSeg" role="radiogroup" aria-label="Форма">
+                    <button type="button" class="seg-btn" data-kind="ИП">ИП</button>
+                    <button type="button" class="seg-btn" data-kind="ЮЛ">Организация</button>
+                </div>
+                <div class="form-grid-3" data-only="ИП">
+                    <div class="form-group"><label class="control-label" for="eLast">Фамилия</label><input id="eLast" name="last_name" class="styled-text-input"></div>
+                    <div class="form-group"><label class="control-label" for="eFirst">Имя</label><input id="eFirst" name="first_name" class="styled-text-input"></div>
+                    <div class="form-group"><label class="control-label" for="eMiddle">Отчество</label><input id="eMiddle" name="middle_name" class="styled-text-input"></div>
+                </div>
+                <div class="form-group" data-only="ЮЛ">
+                    <label class="control-label" for="eFullName">Полное наименование</label>
+                    <input id="eFullName" name="full_name" class="styled-text-input" placeholder="ООО «Яндекс.Лавка»">
+                </div>
+                <div class="form-group">
+                    <label class="control-label" for="eName">Короткое имя в списках</label>
+                    <input id="eName" name="name" class="styled-text-input" placeholder="Пусто — по ФИО или наименованию">
+                </div>
+                <div class="form-grid-3">
+                    <div class="form-group"><label class="control-label" for="eInn">ИНН</label><input id="eInn" name="inn" class="styled-text-input mono-input" inputmode="numeric" maxlength="12"></div>
+                    <div class="form-group"><label class="control-label" for="eOgrn" id="eOgrnLabel">ОГРНИП</label><input id="eOgrn" name="ogrn" class="styled-text-input mono-input" inputmode="numeric" maxlength="15"></div>
+                    <div class="form-group" data-only="ЮЛ"><label class="control-label" for="eKpp">КПП</label><input id="eKpp" name="kpp" class="styled-text-input mono-input" maxlength="9"></div>
+                </div>
+                <div class="form-group">
+                    <label class="control-label" for="eAddress">Адрес</label>
+                    <input id="eAddress" name="address" class="styled-text-input">
+                    <span class="field-hint">Для ИП — адрес из документов, для организации — юридический. Адрес погрузки задаётся отдельно.</span>
+                </div>
+                <div class="form-grid-2">
+                    <div class="form-group">
+                        <label class="control-label" for="ePhone">Телефон</label>
+                        <input id="ePhone" name="phone" class="styled-text-input" type="tel">
+                        <span class="field-hint">Обязателен для ЭТрН: без него СБИС не пропустит документ.</span>
+                    </div>
+                    <div class="form-group"><label class="control-label" for="eEmail">Почта</label><input id="eEmail" name="email" class="styled-text-input" type="email"></div>
+                </div>
+                <div class="form-group">
+                    <label class="control-label" for="eEdo">Идентификатор ящика ЭДО</label>
+                    <input id="eEdo" name="edo_id" class="styled-text-input mono-input" placeholder="2BM-…">
+                    <span class="field-hint">Нужен покупателю, если документы принимает не СБИС: у Лавки ЭТрН идут в Контур.</span>
+                </div>
+                <div class="form-group"><label class="control-label" for="eNotes">Заметки</label><textarea id="eNotes" name="notes" class="styled-text-input" rows="2"></textarea></div>
+
+                <span class="error-msg" id="entityError"></span>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" data-act="cancel">Отмена</button>
+                    <button type="submit" class="btn btn-primary" id="entitySave">Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="/static/hub-ui.js?v=1.10.0"></script>
+    <script src="/static/parties.js?v=1.12.0"></script>
+    <script src="/static/entities.js?v=1.12.1"></script>
+    <div id="hubEnd" hidden></div>
+</body>
+</html>
