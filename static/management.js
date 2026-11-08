@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const productListContainer = document.getElementById('productList');
     const productSearchInput = document.getElementById('productSearchInput');
     const productCategoryFilter = document.getElementById('productCategoryFilter');
+    const productStateFilter = document.getElementById('productStateFilter');
     const categoryContextMenu = document.getElementById('categoryContextMenu');
 
     const productModal = document.getElementById('productModal');
@@ -21,6 +22,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let allProducts = [];
     let productSearchTerm = '';
     let productCategoryFilterId = '';
+    let productStateFilterId = ''; // '', 'missing' или 'hidden'
     let isAdmin = false;
 
     // Открытая карточка: товар, режим и черновик правок
@@ -175,8 +177,31 @@ document.addEventListener('DOMContentLoaded', () => {
         return new Date(`${isoDate}Z`).toLocaleDateString('ru-RU', { timeZone: 'Europe/Moscow' });
     }
 
+    // Число товаров в пунктах фильтра состояния
+    function updateStateFilterCounts() {
+        const visible = allProducts.filter(p => !p.is_hidden);
+        const counts = {
+            '': visible.length,
+            missing: visible.filter(p => p.missing.length > 0).length,
+            hidden: allProducts.length - visible.length,
+        };
+        const titles = { '': 'Все товары', missing: 'Нужно заполнить', hidden: 'Скрытые' };
+        for (const option of productStateFilter.options) {
+            option.textContent = `${titles[option.value]} · ${counts[option.value]}`;
+        }
+    }
+
+    function missingText(product) {
+        return `Не хватает: ${product.missing.join(', ')}`;
+    }
+
     function renderProductList() {
-        let filtered = [...allProducts];
+        updateStateFilterCounts();
+        // Скрытые видны только в своём фильтре
+        let filtered = allProducts.filter(p => (productStateFilterId === 'hidden') === p.is_hidden);
+        if (productStateFilterId === 'missing') {
+            filtered = filtered.filter(p => p.missing.length > 0);
+        }
 
         if (productCategoryFilterId === 'none') {
             filtered = filtered.filter(p => p.categories.length === 0);
@@ -196,7 +221,11 @@ document.addEventListener('DOMContentLoaded', () => {
         filtered.sort((a, b) => productLabel(a).name.localeCompare(productLabel(b).name));
 
         if (filtered.length === 0) {
-            productListContainer.innerHTML = '<p class="text-muted product-list-empty">Ничего не найдено</p>';
+            const narrowed = productSearchTerm || productCategoryFilterId;
+            let emptyText = 'Ничего не найдено';
+            if (!narrowed && productStateFilterId === 'missing') emptyText = 'Все карточки заполнены';
+            if (!narrowed && productStateFilterId === 'hidden') emptyText = 'Скрытых товаров нет';
+            productListContainer.innerHTML = `<p class="text-muted product-list-empty">${emptyText}</p>`;
             return;
         }
 
@@ -208,7 +237,9 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         ` + filtered.map(product => `
             <div class="product-row" data-id="${product.id}" role="button" tabindex="0">
-                <span class="product-name">${esc(productLabel(product).name)}</span>
+                <span class="product-name">${esc(productLabel(product).name)}${product.missing.length && !product.is_hidden
+                    ? `<span class="badge badge-yellow product-state" title="${esc(missingText(product))}">Заполнить</span>`
+                    : ''}</span>
                 <span class="product-barcode">${esc(product.barcode || '—')}</span>
                 <span class="product-weight">${formatWeight(productWeight(product)) || '—'}</span>
             </div>
@@ -267,6 +298,18 @@ document.addEventListener('DOMContentLoaded', () => {
             return `<p class="pc-origin">Добавлен вручную${who}${date ? `, ${date}` : ''}</p>`;
         }
         return `<p class="pc-origin"><span class="pc-origin-mark">Авто</span> Создан программой: найден в Google Таблице${date ? `, ${date}` : ''}</p>`;
+    }
+
+    // Скрыт ли товар и чего ему не хватает для Лавки и СБИС
+    function renderState(product) {
+        if (cardIsNew || cardEditing) return '';
+        if (product.is_hidden) {
+            return '<p class="pc-state"><span class="badge badge-muted">Скрыт</span> Не показывается в справочнике. Синхронизация не создаст его заново.</p>';
+        }
+        if (product.missing.length) {
+            return `<p class="pc-state"><span class="badge badge-yellow">Заполнить</span> ${esc(missingText(product))}</p>`;
+        }
+        return '';
     }
 
     function renderNutritionView(product) {
@@ -369,8 +412,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span class="eyebrow">Карточка товара</span>
                     <h2>${cardIsNew ? 'Новый товар' : esc(label.name)}</h2>
                     ${renderOrigin(product)}
+                    ${renderState(product)}
                 </div>
                 <div class="pc-head-actions">
+                    ${isAdmin && !cardEditing ? `<button type="button" class="btn btn-secondary btn-sm" data-act="toggle-hidden">${product.is_hidden ? 'Вернуть' : 'Скрыть'}</button>` : ''}
                     ${isAdmin && !cardEditing ? '<button type="button" class="btn btn-secondary btn-sm" data-act="edit">Редактировать</button>' : ''}
                     <button type="button" class="icon-btn" data-act="close" aria-label="Закрыть">&times;</button>
                 </div>
@@ -418,7 +463,7 @@ document.addEventListener('DOMContentLoaded', () => {
         cardProduct = {
             id: null, name_from_sheet: '', display_name: null, composition: null, barcode: null,
             weight_grams: null, weight_from_name: null, protein: null, fat: null, carbs: null,
-            source: 'manual', categories: [],
+            source: 'manual', categories: [], is_hidden: false, missing: [],
         };
         cardIsNew = true;
         openModal(productModal);
@@ -563,7 +608,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const ok = await confirmDialog({
             title: 'Удалить товар?',
             text: product.name_from_sheet
-                ? 'Штрих-код, вес и КБЖУ будут потеряны. Если товар ещё есть в Google Таблице, при следующей синхронизации он появится снова, но уже пустым.'
+                ? 'Штрих-код, вес и КБЖУ будут потеряны. Если товар ещё есть в Google Таблице, при следующей синхронизации он появится снова, но уже пустым. Чтобы убрать товар из списка и сохранить данные, лучше скрыть его.'
                 : 'Товар будет удалён вместе со штрих-кодом, весом и КБЖУ. Вернуть его нельзя.',
         });
         if (!ok) return;
@@ -581,6 +626,23 @@ document.addEventListener('DOMContentLoaded', () => {
         closeModal(productModal);
         renderProductList();
         toast('Товар удалён');
+    }
+
+    async function toggleHidden(button) {
+        const hidden = !cardProduct.is_hidden;
+        button.disabled = true;
+        try {
+            const updated = await api(`/api/v1/products/${cardProduct.id}/hidden`, { method: 'PUT', body: { hidden } });
+            const idx = allProducts.findIndex(p => p.id === updated.id);
+            if (idx !== -1) allProducts[idx] = updated;
+            cardProduct = updated;
+            renderCard();
+            renderProductList();
+            toast(hidden ? 'Товар скрыт' : 'Товар снова в справочнике');
+        } catch (err) {
+            toast(err.message, 'error');
+            button.disabled = false;
+        }
     }
 
     async function generateBarcode() {
@@ -671,6 +733,11 @@ document.addEventListener('DOMContentLoaded', () => {
         renderProductList();
     });
 
+    productStateFilter.addEventListener('change', (e) => {
+        productStateFilterId = e.target.value;
+        renderProductList();
+    });
+
     productListContainer.addEventListener('click', (e) => {
         const row = e.target.closest('.product-row');
         if (row) openCard(parseInt(row.dataset.id, 10));
@@ -698,6 +765,7 @@ document.addEventListener('DOMContentLoaded', () => {
         else if (act === 'cancel') leaveEdit(false);
         else if (act === 'save') saveCard(button);
         else if (act === 'delete') deleteCardProduct();
+        else if (act === 'toggle-hidden') toggleHidden(button);
         else if (act === 'generate') generateBarcode();
         else if (act === 'add-category') showCategoryMenu(button);
         else if (act === 'close') {
@@ -736,6 +804,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (urlParams.get('filter') === 'none') {
             productCategoryFilterId = 'none';
             productCategoryFilter.value = 'none';
+        } else if (urlParams.get('filter') === 'missing') {
+            productStateFilterId = 'missing';
+            productStateFilter.value = 'missing';
         }
 
         // Новые товары из таблицы добавляет синхронизация на сервере

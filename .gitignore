@@ -19,3 +19,9 @@ reports/*.pdf
 # IDE
 .vscode/
 .idea/
+
+# Дампы базы и локальные файлы инструментов
+*.sql
+*.dump
+proxmox-jobs.sqlite3*
+.claude/

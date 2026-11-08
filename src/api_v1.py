@@ -200,6 +200,16 @@ def update_product(product_id: int, data: schemas.ProductUpdate, db: Session = D
         raise HTTPException(status_code=404, detail="Продукт не найден")
     return product
 
+@router.put("/products/{product_id}/hidden", response_model=schemas.Product, tags=["Продукты"])
+def set_product_hidden(product_id: int, data: schemas.ProductHidden, db: Session = Depends(get_db), admin: schemas.User = Depends(auth.admin_only)):
+    product = crud.get_product(db, product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Продукт не найден")
+    product.is_hidden = data.hidden
+    db.commit()
+    db.refresh(product)
+    return product
+
 @router.delete("/products/{product_id}", tags=["Продукты"])
 def delete_product(product_id: int, db: Session = Depends(get_db), admin: schemas.User = Depends(auth.admin_only)):
     if not crud.delete_product(db, product_id):

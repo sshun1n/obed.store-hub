@@ -1,4 +1,5 @@
 import os
+import logging
 from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import Depends, HTTPException, status, Request
@@ -9,8 +10,12 @@ from sqlalchemy.orm import Session
 
 from src import database, schemas, crud
 
-# Секретный ключ для подписи токенов
-SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-key-change-me-in-production")
+# Секретный ключ для подписи токенов и шифрования паролей внешних систем в базе
+_DEFAULT_SECRET_KEY = "super-secret-key-change-me-in-production"
+SECRET_KEY = os.getenv("SECRET_KEY") or _DEFAULT_SECRET_KEY
+if SECRET_KEY == _DEFAULT_SECRET_KEY:
+    # Репозиторий публичный: с этим ключом можно подделать вход и расшифровать пароли
+    logging.getLogger("Auth").warning("SECRET_KEY не задан, используется значение из кода. Задайте его в .env")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 # 24 часа
 

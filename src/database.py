@@ -72,6 +72,9 @@ class Product(Base):
     source = Column(String, default="sheet", nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=True)  # у старых товаров пусто
     created_by = Column(String, nullable=True)
+    # Скрытый товар не показывается в справочнике, но остаётся в базе:
+    # синхронизация не создаст его заново, штрих-код и КБЖУ сохраняются
+    is_hidden = Column(Boolean, default=False, nullable=True)
 
     categories = relationship("Category", secondary="product_category_map", back_populates="products")
 
@@ -117,6 +120,24 @@ class SyncSettings(Base):
     start_time = Column(String, default="08:00", nullable=False)
     end_time = Column(String, default="17:00", nullable=False)
     weekdays = Column(String, default="0,1,2,3,4,5,6")  # 0 — понедельник, как в work_schedules
+
+class MailSettings(Base):
+    # Ящик, куда Яндекс.Лавка присылает заказы и отчёты (одна строка).
+    # Пароль приложения хранится зашифрованным ключом из SECRET_KEY и наружу не отдаётся
+    __tablename__ = "mail_settings"
+
+    id = Column(Integer, primary_key=True)
+    host = Column(String, default="imap.yandex.ru", nullable=False)
+    port = Column(Integer, default=993, nullable=False)
+    username = Column(String, nullable=True)
+    password_enc = Column(Text, nullable=True)
+    folder = Column(String, default="INBOX", nullable=False)
+    updated_at = Column(DateTime, nullable=True)
+    updated_by = Column(String, nullable=True)
+    # Последняя проверка подключения, время UTC
+    checked_at = Column(DateTime, nullable=True)
+    check_ok = Column(Boolean, nullable=True)
+    check_message = Column(String, nullable=True)
 
 # --- МОДЕЛИ УЧЁТА РАБОЧЕГО ВРЕМЕНИ ---
 

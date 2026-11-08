@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field, computed_field, field_validator
 from typing import List, Optional
 from datetime import datetime, date
 
-from src.service import parse_weight
+from src.service import parse_dish_name, parse_weight
 
 # --- СХЕМЫ КАТЕГОРИЙ ---
 
@@ -37,12 +37,34 @@ class Product(ProductBase):
     source: str = 'sheet'
     created_at: Optional[datetime] = None
     created_by: Optional[str] = None
+    is_hidden: bool = False
     categories: List[Category] = []
 
     @computed_field
     @property
     def weight_from_name(self) -> Optional[int]:
         return parse_weight(self.name_from_sheet) if self.name_from_sheet else None
+
+    @computed_field
+    @property
+    def missing(self) -> List[str]:
+        """Чего не хватает карточке для Яндекс.Лавки и СБИС."""
+        result = []
+        if not self.barcode:
+            result.append("штрих-код")
+        if self.weight_grams is None and self.weight_from_name is None:
+            result.append("вес")
+        composition = self.composition or parse_dish_name(self.name_from_sheet or "")[1]
+        if not (composition or "").strip():
+            result.append("состав")
+        if None in (self.protein, self.fat, self.carbs):
+            result.append("КБЖУ")
+        return result
+
+    @field_validator('is_hidden', mode='before')
+    @classmethod
+    def _null_hidden(cls, v):
+        return bool(v)
 
     @field_validator('source', mode='before')
     @classmethod
@@ -66,6 +88,20 @@ class ProductUpdate(ProductFields):
 
 class ProductCreate(ProductFields):
     name: str
+
+class ProductHidden(BaseModel):
+    hidden: bool
+
+# --- СХЕМЫ ПОЧТЫ ЛАВКИ ---
+
+class MailSettingsUpdate(BaseModel):
+    host: str = Field(min_length=1, max_length=255)
+    port: int = Field(ge=1, le=65535)
+    username: str = Field(max_length=255)
+    folder: str = Field(min_length=1, max_length=255)
+    # Пусто — оставить сохранённый пароль
+    password: Optional[str] = Field(default=None, max_length=255)
+    clear_password: bool = False
 
 # --- СХЕМЫ СИНХРОНИЗАЦИИ ---
 

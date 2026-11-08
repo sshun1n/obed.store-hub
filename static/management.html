@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=1.10.0">
+    <link rel="stylesheet" href="/static/style.css?v=1.11.1">
     <link rel="expect" href="#hubEnd" blocking="render">
 </head>
 <body>
@@ -30,6 +30,11 @@
                     <select id="productCategoryFilter" class="styled-text-input">
                         <option value="">Все категории</option>
                         <option value="none">Без категории</option>
+                    </select>
+                    <select id="productStateFilter" class="styled-text-input" aria-label="Состояние карточки">
+                        <option value="">Все товары</option>
+                        <option value="missing">Нужно заполнить</option>
+                        <option value="hidden">Скрытые</option>
                     </select>
                     <button type="button" id="addProductBtn" class="btn btn-primary product-add" hidden>Добавить товар</button>
                 </div>
@@ -80,7 +85,7 @@
 
     <script src="/static/hub-ui.js?v=1.10.0"></script>
     <script src="/static/sync.js?v=1.9.4"></script>
-    <script src="/static/management.js?v=1.10.1"></script>
+    <script src="/static/management.js?v=1.11.0"></script>
     <div id="hubEnd" hidden></div>
 </body>
 </html>

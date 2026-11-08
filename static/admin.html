@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=1.10.0">
+    <link rel="stylesheet" href="/static/style.css?v=1.11.1">
     <link rel="expect" href="#hubEnd" blocking="render">
 </head>
 <body>
@@ -81,6 +81,44 @@
                     <button type="button" class="btn btn-secondary btn-sm" id="syncConfigureBtn">Настроить</button>
                 </div>
             </div>
+
+            <div class="card">
+                <h2 class="card-title-small">Почта Яндекс.Лавки</h2>
+                <p class="field-hint mail-intro">Ящик, куда Лавка присылает заказы и отчёты. Приложение только читает его: письма не помечаются и не удаляются.</p>
+                <form id="mailForm" class="form-layout" autocomplete="off">
+                    <div class="form-group">
+                        <label for="mailUsername" class="control-label">Адрес ящика</label>
+                        <input type="email" id="mailUsername" class="styled-text-input mail-input" placeholder="name@yandex.ru" autocomplete="off" spellcheck="false">
+                    </div>
+                    <div class="form-group">
+                        <label for="mailPassword" class="control-label">Пароль приложения</label>
+                        <div class="mail-password-row">
+                            <input type="password" id="mailPassword" class="styled-text-input mail-input" autocomplete="new-password" spellcheck="false">
+                            <button type="button" class="btn btn-danger-ghost btn-sm" id="mailClearPassword" hidden>Удалить</button>
+                        </div>
+                        <span class="field-hint" id="mailPasswordHint"></span>
+                    </div>
+                    <div class="mail-server-row">
+                        <div class="form-group">
+                            <label for="mailHost" class="control-label">Сервер IMAP</label>
+                            <input type="text" id="mailHost" class="styled-text-input mail-input" spellcheck="false">
+                        </div>
+                        <div class="form-group">
+                            <label for="mailPort" class="control-label">Порт</label>
+                            <input type="text" id="mailPort" class="styled-text-input mail-input" inputmode="numeric">
+                        </div>
+                        <div class="form-group">
+                            <label for="mailFolder" class="control-label">Папка</label>
+                            <input type="text" id="mailFolder" class="styled-text-input mail-input" spellcheck="false">
+                        </div>
+                    </div>
+                    <p class="mail-status" id="mailStatus" role="status" hidden></p>
+                    <div class="mail-actions">
+                        <button type="button" class="btn btn-secondary" id="mailCheckBtn">Проверить подключение</button>
+                        <button type="submit" class="btn btn-primary" id="mailSaveBtn">Сохранить</button>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
 
@@ -127,6 +165,7 @@
 
     <script src="/static/hub-ui.js?v=1.10.0"></script>
     <script src="/static/admin.js?v=1.9.4"></script>
+    <script src="/static/mail-settings.js?v=1.11.0"></script>
     <div id="hubEnd" hidden></div>
 </body>
 </html>

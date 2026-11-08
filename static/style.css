@@ -1288,6 +1288,9 @@ textarea.styled-text-input { resize: vertical; min-height: 64px; line-height: 1.
 .pc-title .eyebrow { display: block; margin-bottom: 6px; }
 .pc-title h2 { font-size: 1.3rem; line-height: 1.25; text-wrap: pretty; }
 .pc-origin { margin-top: 8px; font-size: 0.78rem; line-height: 1.4; color: var(--muted); }
+.pc-state { margin-top: 8px; font-size: 0.78rem; line-height: 1.4; color: var(--ink-soft); }
+.pc-state .badge { margin-right: 4px; }
+.product-state { margin-left: 8px; cursor: help; }
 .pc-origin-mark {
     display: inline-block;
     margin-right: 4px;
@@ -1687,4 +1690,28 @@ textarea.styled-text-input { resize: vertical; min-height: 64px; line-height: 1.
     th, td { padding: 11px 14px; }
     .btn { padding: 11px 18px; }
     .chip { padding: 8px 15px; }
+}
+
+/* Почта Яндекс.Лавки в админ-панели */
+.mail-intro { margin: -6px 0 18px; }
+.mail-input { width: 100%; min-width: 0; }
+.mail-password-row { display: flex; gap: 8px; align-items: center; }
+.mail-password-row .styled-text-input { flex: 1; }
+.mail-server-row { display: grid; grid-template-columns: 5.5rem minmax(0, 1fr); gap: 14px; align-items: start; }
+.mail-server-row .form-group:first-child { grid-column: 1 / -1; }
+.mail-status {
+    margin: 0;
+    padding: 9px 12px;
+    font-size: 0.8rem;
+    line-height: 1.4;
+    color: var(--ink-soft);
+    background: var(--paper);
+    border: 1px solid var(--line-strong);
+    border-radius: 6px;
+}
+.mail-status.mail-status-ok { color: #24522C; background: #EDF3EA; border-color: #C9DCC4; }
+.mail-status.mail-status-error { color: #8C2317; background: #FBEBE8; border-color: #EFC7C0; }
+.mail-actions { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+@media (max-width: 760px) {
+    .mail-actions .btn { flex: 1; }
 }
