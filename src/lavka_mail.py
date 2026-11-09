@@ -3,8 +3,9 @@
 Перенесено из ka-webapp (yandex_mail, yandex_import) с двумя отличиями:
 * журнал ведётся по паре «письмо + файл»: Лавка кладёт в одно письмо два файла
   с одинаковым именем, и журнал по письму пропустил бы второй;
-* отчёты Лавки (уровень сервиса, метрики) пока не разбираются и в журнал не
-  пишутся: когда появится их разбор, «Загрузить историю» подберёт их.
+* еженедельный отчёт метрик разбирается (списания и отзывы, `lavka_reports`),
+  а отчёт по уровню сервиса пока нет и в журнал не пишется: когда появится его
+  разбор, «Загрузить историю» подберёт его.
 
 Ящик открывается только на чтение: письма не помечаются и не удаляются.
 От повторов три защиты: письмо+файл в журнале, тот же файл в другом письме,
@@ -29,8 +30,8 @@ from email.message import Message
 from email.utils import parseaddr, parsedate_to_datetime
 from typing import Dict, List, Optional, Set, Tuple
 
-from src import database, secret_box, sheet_sync
-from src.lavka_parser import KIND_ORDERS, ParsedOrder, ParseError, detect_kind, parse_orders
+from src import database, lavka_reports, secret_box, sheet_sync
+from src.lavka_parser import KIND_METRICS, KIND_ORDERS, ParsedOrder, ParseError, detect_kind, parse_orders
 
 logger = logging.getLogger("LavkaMail")
 
@@ -212,7 +213,9 @@ class ImportResult:
     created: List[str] = field(default_factory=list)
     revised: List[str] = field(default_factory=list)
     unchanged: List[str] = field(default_factory=list)
-    reports: int = 0          # отчёты Лавки: отложены до их разбора
+    reports: int = 0          # отчёты по уровню сервиса: отложены до их разбора
+    metrics: int = 0          # разобранные отчёты метрик
+    feedback: int = 0         # новые отзывы из них
     skipped: int = 0
     errors: List[str] = field(default_factory=list)
 
@@ -221,6 +224,8 @@ class ImportResult:
         self.revised += other.revised
         self.unchanged += other.unchanged
         self.reports += other.reports
+        self.metrics += other.metrics
+        self.feedback += other.feedback
         self.skipped += other.skipped
         self.errors += other.errors
 
@@ -307,15 +312,23 @@ def import_attachment(db, content: bytes, *, filename: str = "", message_id: str
                        received_at=received_at, kind=kind, orders_found=found, note=text or None))
 
     # Тот же файл байт в байт уже приходил другим письмом
-    if db.query(journal).filter(journal.attachment_sha256 == digest, journal.kind == KIND_ORDERS).first():
+    if db.query(journal).filter(journal.attachment_sha256 == digest,
+                                journal.kind.in_([KIND_ORDERS, KIND_METRICS])).first():
         note("skipped", "такой же файл уже приходил")
         db.commit()
         return ImportResult(skipped=1)
 
     try:
         kind = detect_kind(content)
+        if kind == KIND_METRICS:
+            parsed_metrics = lavka_reports.parse_metrics(content)
+            report_date = received_at.date() if received_at else None
+            rows, fresh = lavka_reports.save_metrics(db, parsed_metrics, report_date)
+            note(KIND_METRICS, f"метрик: {rows}, новых отзывов: {fresh}")
+            db.commit()
+            return ImportResult(metrics=1, feedback=fresh)
         if kind and kind != KIND_ORDERS:
-            # Отчёты Лавки разберём на следующем этапе. В журнал не пишем, чтобы «Загрузить историю» их потом подобрала
+            # Отчёт по уровню сервиса пока не нужен. В журнал не пишем, чтобы «Загрузить историю» его потом подобрала
             return ImportResult(reports=1)
         if not kind:
             note("skipped", "не файл заказа Лавки")
@@ -364,8 +377,10 @@ def _summary(letters: int, result: ImportResult, remaining: int) -> str:
         parts.append(f"новых заказов: {len(result.created)}")
     if result.revised:
         parts.append(f"исправлено: {len(result.revised)}")
-    if result.reports:
-        parts.append(f"отчётов Лавки отложено: {result.reports}")
+    if result.metrics:
+        parts.append(f"отчётов метрик: {result.metrics}")
+    if result.feedback:
+        parts.append(f"новых отзывов: {result.feedback}")
     if result.errors:
         parts.append(f"ошибок: {len(result.errors)}")
     if not (result.created or result.revised or result.errors) and letters:

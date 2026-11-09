@@ -1935,3 +1935,121 @@ textarea.styled-text-input { resize: vertical; min-height: 64px; line-height: 1.
 @media (prefers-reduced-motion: reduce) {
     .lavka-expand, .lavka-expand-inner, .lavka-chev { transition: none; }
 }
+
+/* ===== Отчёты Лавки и прогноз ===== */
+.report-stats, .forecast-stats { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+.stat-big { font-size: 1.6rem; line-height: 1.2; }
+.stat-sub { font-size: 0.76rem; color: var(--muted); line-height: 1.4; }
+.stat-chart { position: relative; }
+.stat-chart .stat-label { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.stat-icon { width: 20px; height: 20px; color: var(--muted); transition: color 0.15s, transform 0.2s; }
+.stat-chart:hover .stat-icon { color: var(--red); transform: translateY(-1px); }
+.stat-chart:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.trend-value { font-size: 1.35rem; }
+.text-red { color: var(--red); }
+
+.report-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px 22px; margin-bottom: 18px; }
+.report-card-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.report-card-head h2 { margin: 0; }
+.report-card-head .fb-filter { margin-left: auto; }
+.report-card .table-wrapper { border-radius: 8px; }
+.report-sub-title { font-size: 0.95rem; margin: 18px 0 10px; }
+.th-sub { display: block; font-weight: 500; letter-spacing: 0.06em; }
+
+/* Пояснение к блоку: раскрывается по нажатию */
+.chart-help { margin-top: 12px; font-size: 0.84rem; }
+.chart-help summary { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; color: var(--muted); list-style: none; }
+.chart-help summary::-webkit-details-marker { display: none; }
+.chart-help summary:hover { color: var(--ink); }
+.chart-help-icon { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; border: 1px solid currentColor; font-family: var(--mono); font-size: 0.66rem; font-weight: 600; }
+.chart-help-body { margin-top: 10px; padding: 12px 14px; background: var(--paper); border-radius: 8px; color: var(--ink-soft); max-width: 80ch; }
+.chart-help-body p + p { margin-top: 8px; }
+
+/* Графики */
+.lc-box { position: relative; margin-bottom: 14px; }
+.lc-svg { display: block; width: 100%; height: auto; overflow: visible; font-family: var(--mono); }
+.lc-grid { stroke: var(--line); stroke-width: 1; }
+.lc-axis { stroke: var(--line-strong); stroke-width: 1; }
+.lc-tick { font-size: 11px; fill: var(--muted); }
+.lc-tick-plan { fill: var(--red); font-weight: 600; }
+.lc-zone { font-size: 10px; fill: var(--red); text-transform: uppercase; letter-spacing: 0.12em; }
+.lc-future { fill: #FBF3F1; }
+.lc-band { fill: var(--red); fill-opacity: 0.14; }
+.lc-line { fill: none; stroke: var(--ink); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.lc-line-plan { stroke: var(--red); stroke-dasharray: 6 5; }
+.lc-dot { fill: var(--card); stroke: var(--ink); stroke-width: 1.5; transition: r 0.15s; }
+.lc-dot-plan { fill: var(--red); stroke: var(--card); stroke-width: 2; }
+.lc-dot.active { r: 5; }
+.lc-halo { fill: none; stroke: var(--ink); stroke-width: 1.5; opacity: 0; transition: opacity 0.15s; pointer-events: none; }
+.lc-halo-plan { stroke: var(--red); }
+.lc-guide { stroke: var(--line-strong); stroke-dasharray: 3 3; opacity: 0; pointer-events: none; }
+.lc-hover .lc-halo, .lc-hover .lc-guide { opacity: 1; }
+.lc-bar { fill: var(--ink); transition: opacity 0.15s; }
+.lc-bar-plan { fill: var(--red); fill-opacity: 0.18; stroke: var(--red); stroke-width: 1.5; }
+.lc-hit { fill: transparent; }
+.lc-pair.active .lc-hit { fill: var(--paper); }
+.lc-err { font-size: 12px; font-weight: 600; fill: var(--ink-soft); }
+.lc-err-big { fill: var(--red); }
+.lc-tip {
+    position: absolute; z-index: 5; pointer-events: none; padding: 8px 11px; max-width: 260px;
+    font-size: 0.78rem; line-height: 1.45; color: #fff; background: var(--ink); border-radius: 7px;
+    box-shadow: 0 8px 24px rgba(23, 23, 26, 0.2); opacity: 0; transform: translateY(4px); transition: opacity 0.12s, transform 0.12s;
+}
+.lc-tip.show { opacity: 1; transform: none; }
+.lc-tip-sub { color: rgba(255, 255, 255, 0.7); }
+.lc-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; margin-left: auto; font-size: 0.74rem; color: var(--muted); }
+.lc-key { display: inline-block; width: 18px; height: 0; border-top: 2px solid var(--ink); margin-left: 6px; }
+.lc-key-plan { border-top: 2px dashed var(--red); }
+.lc-key-band { height: 10px; border: none; background: rgba(224, 58, 42, 0.14); border-radius: 2px; }
+.lc-key-fact { border-top: 2px solid var(--ink); }
+.report-modal .lc-key-fact { height: 10px; width: 12px; border: none; background: var(--ink); border-radius: 2px; }
+.lc-key-bar { height: 10px; width: 12px; border: 1.5px solid var(--red); background: rgba(224, 58, 42, 0.18); border-radius: 2px; }
+.lc-err-key { font-family: var(--mono); font-weight: 600; color: var(--ink-soft); margin-left: 6px; }
+
+/* Таблицы прогноза */
+.forecast-days table { min-width: 560px; }
+.forecast-items table { min-width: 760px; }
+.forecast-days th.num, .forecast-days td.num, .forecast-items th.num, .forecast-items td.num,
+.error-items th.num, .error-items td.num, .writeoff-table th.num, .writeoff-table td.num { text-align: right !important; white-space: nowrap; }
+.forecast-days tfoot td, .forecast-items tfoot td { font-weight: 600; border-top: 1px solid var(--line-strong); }
+.forecast-items td.text-muted, .forecast-days td.text-muted, .error-items td.text-muted, .writeoff-table td.text-muted { color: var(--muted); }
+
+/* Окна отчётов */
+.modal-content.report-modal { max-width: 860px; display: flex; flex-direction: column; gap: 14px; }
+.report-modal .lc-legend { margin-left: 0; }
+.report-modal .table-wrapper { max-height: 46vh; overflow-y: auto; }
+.report-modal thead th { position: sticky; top: 0; z-index: 1; }
+.error-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.error-summary > div { display: flex; flex-direction: column; gap: 2px; padding: 10px 14px; background: var(--paper); border-radius: 8px; }
+.error-summary b { font-family: var(--mono); font-size: 1.05rem; }
+.error-summary small { font-size: 0.72rem; color: var(--muted); }
+.error-items table, .writeoff-table table { min-width: 520px; }
+
+/* Списания: окно без своей прокрутки, иначе календарь обрезается; листается таблица */
+.modal-content.writeoff-modal { overflow: visible; }
+.writeoff-toolbar { display: flex; align-items: center; gap: 12px 16px; flex-wrap: wrap; }
+.writeoff-total { font-size: 0.84rem; color: var(--muted); }
+.writeoff-total b { color: var(--ink); font-family: var(--mono); }
+#woBody { transition: opacity 0.15s; }
+#woBody.loading { opacity: 0.5; }
+.wo-cell { white-space: nowrap; }
+.wo-bar { display: inline-block; vertical-align: middle; width: 80px; height: 6px; margin-right: 10px; background: var(--paper); border-radius: 3px; overflow: hidden; }
+.wo-bar span { display: block; height: 100%; background: var(--ink-soft); border-radius: 3px; }
+.wo-bar-warn span { background: var(--red); }
+
+/* Отзывы */
+.feedback-table table { min-width: 720px; }
+.feedback-table td:first-child { white-space: nowrap; width: 90px !important; }
+.feedback-table td:nth-child(2) { width: 32% !important; }
+.feedback-table td:nth-child(3) { white-space: nowrap; width: 130px !important; }
+.fb-mark { font-size: 0.8rem; font-weight: 500; }
+.fb-like { color: var(--green); }
+.fb-dislike { color: var(--red); }
+.fb-comment { color: var(--ink-soft); }
+
+@media (max-width: 760px) {
+    .report-card { padding: 16px 14px; }
+    .report-card-head .fb-filter { margin-left: 0; }
+    .lc-legend { margin-left: 0; }
+    .modal-content.writeoff-modal { overflow-y: auto; }
+}

@@ -232,9 +232,49 @@ class LavkaMailFile(Base):
     filename = Column(String(255), nullable=True)
     received_at = Column(DateTime, nullable=True)   # UTC
     processed_at = Column(DateTime, default=datetime.utcnow)
-    kind = Column(String(20), nullable=True)        # orders | skipped | error
+    kind = Column(String(20), nullable=True)        # orders | metrics | skipped | error
     orders_found = Column(Integer, default=0)
     note = Column(Text, nullable=True)
+
+class LavkaMetric(Base):
+    # Недельная метрика позиции из «Еженедельного отчёта метрик для поставщика».
+    # Одна строка — позиция за неделю (неделя приведена к понедельнику). Новый отчёт
+    # переписывает свои недели: окно у отчётов четырёхнедельное и внахлёст
+    __tablename__ = "lavka_metrics"
+    __table_args__ = (UniqueConstraint("week_start", "lavka_id", name="uq_lavka_metric_week_item"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    week_start = Column(Date, nullable=False, index=True)
+    lavka_id = Column(String(30), nullable=False, index=True)   # Item ID — тот же «Лавка ИД», что в заказах
+    name = Column(String(300), nullable=False)
+    category = Column(String(150), nullable=True)
+    subcategory = Column(String(150), nullable=True)
+    cogs = Column(Numeric(12, 2), default=0)
+    sales_qty = Column(Integer, default=0)
+    # Пусто — не из чего посчитать (Лавка присылает inf при нулевой выручке). Ноль тут
+    # читался бы как «списаний не было», то есть ровно наоборот
+    writeoffs_pct = Column(Numeric(8, 2), nullable=True)
+    sla_pct = Column(Numeric(6, 2), nullable=True)
+    like_share = Column(Numeric(6, 2), nullable=True)
+    retention_pct = Column(Numeric(6, 2), nullable=True)
+    report_date = Column(Date, nullable=True)       # день письма, из которого строка
+    imported_at = Column(DateTime, default=datetime.utcnow)
+
+class LavkaFeedback(Base):
+    # Лайк или дизлайк покупателя. Один отзыв приезжает в нескольких отчётах подряд,
+    # поэтому ключ — отпечаток содержимого, а не номер строки
+    __tablename__ = "lavka_feedback"
+
+    id = Column(Integer, primary_key=True, index=True)
+    fingerprint = Column(String(64), unique=True, nullable=False)
+    feedback_date = Column(Date, nullable=False, index=True)
+    order_date = Column(Date, nullable=True)
+    lavka_id = Column(String(30), nullable=True, index=True)
+    name = Column(String(300), nullable=False)
+    subcategory = Column(String(150), nullable=True)
+    liked = Column(Boolean, default=True)
+    comment = Column(Text, nullable=True)
+    imported_at = Column(DateTime, default=datetime.utcnow)
 
 # --- ЮРЛИЦА И ПЕРЕВОЗЧИКИ (Яндекс.Лавка и СБИС) ---
 

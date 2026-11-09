@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Прогноз заказов | OBED.STORE Hub</title>
+    <link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css?v=1.17.0">
+    <link rel="expect" href="#hubEnd" blocking="render">
+</head>
+<body>
+    <script src="/static/components.js?v=1.17.0"></script>
+    <div class="container">
+        <header class="page-header">
+            <span class="eyebrow">Лавка и СБИС</span>
+            <h1>Прогноз заказов</h1>
+            <p class="subtitle" id="subtitle">Сколько закажет Лавка на неделю вперёд — всего и по каждой позиции.</p>
+        </header>
+
+        <div id="content"><div class="empty-state">Загрузка…</div></div>
+    </div>
+
+    <div class="modal" id="errorModal">
+        <div class="modal-content report-modal" role="dialog" aria-modal="true" aria-labelledby="errorTitle">
+            <header class="sheet-modal-head">
+                <div>
+                    <span class="eyebrow">Точность прогноза</span>
+                    <h2 class="card-title-small" id="errorTitle">Прошлая неделя</h2>
+                </div>
+                <button type="button" class="icon-btn" id="errorClose" aria-label="Закрыть">&times;</button>
+            </header>
+            <div id="errorBody"></div>
+        </div>
+    </div>
+
+    <script src="/static/hub-ui.js?v=1.10.0"></script>
+    <script src="/static/period-picker.js?v=1.15.0"></script>
+    <script src="/static/lavka-charts.js?v=1.17.1"></script>
+    <script src="/static/lavka-forecast.js?v=1.17.0"></script>
+    <div id="hubEnd" hidden></div>
+</body>
+</html>

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Отчёты Лавки | OBED.STORE Hub</title>
+    <link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css?v=1.17.0">
+    <link rel="expect" href="#hubEnd" blocking="render">
+</head>
+<body>
+    <script src="/static/components.js?v=1.17.0"></script>
+    <div class="container">
+        <header class="page-header">
+            <span class="eyebrow">Лавка и СБИС</span>
+            <h1>Отчёты Лавки</h1>
+            <p class="subtitle">Списания и отзывы покупателей из еженедельного отчёта метрик, который Лавка присылает на почту.</p>
+        </header>
+
+        <div id="notices"></div>
+        <div id="content"><div class="empty-state">Загрузка…</div></div>
+    </div>
+
+    <div class="modal" id="writeoffModal">
+        <div class="modal-content report-modal writeoff-modal" role="dialog" aria-modal="true" aria-labelledby="writeoffTitle">
+            <header class="sheet-modal-head">
+                <div>
+                    <span class="eyebrow">Списания по позициям</span>
+                    <h2 class="card-title-small" id="writeoffTitle">Средний процент за период</h2>
+                </div>
+                <button type="button" class="icon-btn" id="writeoffClose" aria-label="Закрыть">&times;</button>
+            </header>
+            <div class="writeoff-toolbar">
+                <div class="period-picker" id="woPicker">
+                    <button type="button" class="icon-btn" id="woPrev" aria-label="Предыдущий период">‹</button>
+                    <button type="button" class="period-btn" id="woBtn" aria-haspopup="dialog" aria-expanded="false">
+                        <span class="period-kind" id="woKind">Неделя</span>
+                        <span class="period-label" id="woLabel">—</span>
+                        <span class="period-caret" aria-hidden="true">▾</span>
+                    </button>
+                    <button type="button" class="icon-btn" id="woNext" aria-label="Следующий период">›</button>
+                    <div class="period-pop" id="woPop" role="dialog" aria-label="Выбор периода" hidden></div>
+                </div>
+                <span class="writeoff-total" id="woTotal"></span>
+            </div>
+            <div id="woBody"></div>
+            <p class="field-hint">Лавка считает списания по неделям, поэтому период берётся целыми неделями. Средний процент — с весом по продажам: неделя, в которую продали больше, весит больше.</p>
+        </div>
+    </div>
+
+    <script src="/static/hub-ui.js?v=1.10.0"></script>
+    <script src="/static/period-picker.js?v=1.15.0"></script>
+    <script src="/static/lavka-reports.js?v=1.17.0"></script>
+    <div id="hubEnd" hidden></div>
+</body>
+</html>

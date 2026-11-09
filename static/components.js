@@ -61,11 +61,13 @@
                 ${isAdmin ? link('/employees', '04', 'Сотрудники', ['/employee']) : ''}
                 <div class="side-caption">Лавка и СБИС</div>
                 ${link('/lavka', '05', 'Заказы Лавки')}
-                ${link('/carriers', '06', 'Перевозчики')}
-                ${link('/entities', '07', 'Юрлица')}
+                ${link('/lavka-reports', '06', 'Отчёты Лавки')}
+                ${link('/lavka-forecast', '07', 'Прогноз')}
+                ${link('/carriers', '08', 'Перевозчики')}
+                ${link('/entities', '09', 'Юрлица')}
                 <div class="side-caption">Система</div>
-                ${link('/management', '08', 'Продукция')}
-                ${isAdmin ? link('/admin', '09', 'Админ-панель') : ''}
+                ${link('/management', '10', 'Продукция')}
+                ${isAdmin ? link('/admin', '11', 'Админ-панель') : ''}
             </nav>
             <div class="side-user">
                 ${currentUser ? `

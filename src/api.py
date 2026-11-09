@@ -18,6 +18,7 @@ import src.api_employees as api_employees
 import src.api_mail as api_mail
 import src.api_parties as api_parties
 import src.api_lavka as api_lavka
+import src.api_lavka_reports as api_lavka_reports
 from src import lavka_mail
 from src.database import get_db, Product, Category
 import src.database as database
@@ -45,6 +46,7 @@ app.include_router(api_employees.router, prefix="/api/v1")
 app.include_router(api_mail.router, prefix="/api/v1")
 app.include_router(api_parties.router, prefix="/api/v1")
 app.include_router(api_lavka.router, prefix="/api/v1")
+app.include_router(api_lavka_reports.router, prefix="/api/v1")
 
 # Глобальный словарь для сервисов
 services: Dict[str, Any] = {}
