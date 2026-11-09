@@ -16,15 +16,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const picker = PeriodPicker.create({
         root: el('periodPicker'), button: el('periodBtn'), pop: el('periodPop'),
         kindEl: el('periodKind'), labelEl: el('periodLabel'), prev: el('prevPeriod'), next: el('nextPeriod'),
-        // Документы СБИС живут по дням поставки: неделю или месяц сводим к первому дню
-        onChange: (p) => { if (p.kind !== 'day') picker.set('day', p.start, p.start); selected.clear(); lastResult = null; load(); },
+        // Документы СБИС живут по дням поставки: выбирается только день
+        kinds: ['day'],
+        onChange: () => { selected.clear(); lastResult = null; load(); },
     });
     const day = () => picker.get().start;
     const fmtInt = (n) => new Intl.NumberFormat('ru-RU').format(n || 0);
     const timeText = (iso) => {
         if (!iso) return '';
         const [d, t] = iso.split('T');
-        return d === Hub.isoDate(new Date()) ? `сегодня в ${t.slice(0, 5)}` : `${Hub.fmtDate(d)} в ${t.slice(0, 5)}`;
+        const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+        if (d === Hub.isoDate(new Date())) return `сегодня в ${t.slice(0, 5)}`;
+        if (d === Hub.isoDate(tomorrow)) return `завтра в ${t.slice(0, 5)}`;
+        return `${Hub.fmtDate(d)} в ${t.slice(0, 5)}`;
     };
     const plural = (n, one, few, many) => {
         const m10 = n % 10, m100 = n % 100;
@@ -84,12 +88,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Шаги ---
 
+    const CHECK = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.4 6.6 11.3 12.5 4.9" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     const targets = () => data.points.filter(p => !selecting || selected.has(p.order_no));
     const ordersParam = () => (selecting ? [...selected] : []);
 
     function stepCard(n, title, state, body, done = false, locked = false) {
         return `<article class="saby-step${done ? ' is-done' : ''}${locked ? ' is-locked' : ''}">
-            <header><span class="saby-step-n">${done ? '✓' : n}</span><h3>${title}</h3></header>
+            <header><span class="saby-step-n">${done ? CHECK : n}</span><h3>${title}</h3></header>
             <p class="saby-step-state">${state}</p>
             ${body ? `<div class="saby-step-actions">${body}</div>` : ''}
         </article>`;

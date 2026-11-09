@@ -5,6 +5,7 @@
  *
  *   const picker = PeriodPicker.create({ root, button, pop, kindEl, labelEl, prev, next, onChange });
  *   picker.setMarked(['2026-11-10', …]);  picker.set('day', '2026-11-10', '2026-11-10');
+ *   kinds: ['day'] — только дни: без вкладок и без быстрых кнопок недель и месяцев.
  */
 window.PeriodPicker = (() => {
     const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
@@ -35,7 +36,7 @@ window.PeriodPicker = (() => {
         return `${a.getDate()} ${MONTHS_GEN[a.getMonth()]} ${a.getFullYear()} – ${b.getDate()} ${MONTHS_GEN[b.getMonth()]} ${b.getFullYear()}`;
     }
 
-    function create({ root, button, pop, kindEl, labelEl, prev, next, onChange }) {
+    function create({ root, button, pop, kindEl, labelEl, prev, next, onChange, kinds = Object.keys(KINDS) }) {
         let kind = 'day';
         let start = todayIso();
         let end = start;
@@ -134,7 +135,8 @@ window.PeriodPicker = (() => {
             if (last) chips.push(['last', 'Последняя поставка']);
             chips.push(['week', 'Эта неделя'], ['prevweek', 'Прошлая неделя'], ['month', 'Этот месяц']);
             if (today !== last) chips.unshift(['today', 'Сегодня']);
-            return chips.map(([k, t]) => `<button type="button" class="chip" data-quick="${k}">${t}</button>`).join('');
+            const allowed = { last: 'day', today: 'day', week: 'week', prevweek: 'week', month: 'month' };
+            return chips.filter(([k]) => kinds.includes(allowed[k])).map(([k, t]) => `<button type="button" class="chip" data-quick="${k}">${t}</button>`).join('');
         }
 
         function hint() {
@@ -144,9 +146,10 @@ window.PeriodPicker = (() => {
         }
 
         function render() {
+            const tabs = kinds.length > 1 ? `<div class="seg pp-tabs">${Object.entries(KINDS).filter(([k]) => kinds.includes(k)).map(([k, t]) =>
+                    `<button type="button" class="seg-btn${k === draftKind ? ' active' : ''}" data-kind="${k}">${t}</button>`).join('')}</div>` : '';
             pop.innerHTML = `
-                <div class="seg pp-tabs">${Object.entries(KINDS).map(([k, t]) =>
-                    `<button type="button" class="seg-btn${k === draftKind ? ' active' : ''}" data-kind="${k}">${t}</button>`).join('')}</div>
+                ${tabs}
                 <div class="pp-body">${draftKind === 'month' ? renderMonths() : renderCalendar()}</div>
                 <p class="pp-hint">${hint()}</p>
                 <div class="pp-quick">${quickChips()}</div>`;
