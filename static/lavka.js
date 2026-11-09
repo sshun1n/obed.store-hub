@@ -108,13 +108,98 @@ document.addEventListener('DOMContentLoaded', () => {
         const p = picker.get();
         saveUrl(p);
         content.innerHTML = '<div class="empty-state">Загрузка…</div>';
+        const ordersReq = api(`/api/v1/lavka/orders?start=${p.start}&end=${p.end}`);
+        ordersReq.catch(() => {});   // ошибку покажет renderOrders
         try {
             current = await api(`/api/v1/lavka/summary?start=${p.start}&end=${p.end}`);
             render();
         } catch (err) {
             content.innerHTML = `<div class="empty-state">${esc(err.message)}</div>`;
+            el('ordersSection').hidden = true;
+            return;
+        }
+        try {
+            renderOrders(await ordersReq, p);
+        } catch (err) {
+            el('ordersSection').hidden = false;
+            el('orders').innerHTML = `<div class="empty-state">${esc(err.message)}</div>`;
         }
     }
+
+    // --- Заказы по точкам: строка раскрывается позициями ---
+
+    function shortDate(iso) {
+        const d = PeriodPicker.parse(iso);
+        return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`;
+    }
+
+    function orderLines(order) {
+        return `
+            <table class="lavka-lines">
+                <thead><tr><th>Товар</th><th>Штрих-код</th><th class="num">Штук</th><th class="num">Цена с НДС</th><th class="num">Сумма с НДС</th></tr></thead>
+                <tbody>${order.lines.map(l => `
+                    <tr>
+                        <td>${esc(l.name)}</td>
+                        <td class="mono-cell">${esc(l.barcode)}</td>
+                        <td class="num"><b>${fmtInt(l.quantity)}</b></td>
+                        <td class="num">${fmtMoney(l.price_gross)}</td>
+                        <td class="num">${fmtMoney(l.gross)}</td>
+                    </tr>`).join('')}
+                </tbody>
+            </table>`;
+    }
+
+    function renderOrders(orders, p) {
+        const section = el('ordersSection');
+        const box = el('orders');
+        if (!orders.length) { section.hidden = true; box.innerHTML = ''; return; }
+        section.hidden = false;
+        const manyDays = p.start !== p.end;
+        const cols = manyDays ? 6 : 5;
+        el('ordersSub').textContent = `${fmtInt(orders.length)} ${plural(orders.length, 'заказ', 'заказа', 'заказов')}`;
+        box.innerHTML = `
+        <div class="table-wrapper data-table lavka-order-table">
+            <table>
+                <thead><tr>
+                    ${manyDays ? '<th>Дата</th>' : ''}<th>Адрес</th><th class="num">Позиций</th><th class="num">Штук</th><th class="num">Сумма с НДС</th><th class="lavka-chev-col"></th>
+                </tr></thead>
+                <tbody>${orders.map(o => `
+                    <tr class="lavka-order" data-order="${o.id}" tabindex="0" aria-expanded="false">
+                        ${manyDays ? `<td class="mono-cell">${shortDate(o.delivery_date)}</td>` : ''}
+                        <td>
+                            <div title="${esc(o.address)}">${esc(o.address_short || o.point)}</div>
+                            <div class="cell-sub">${o.address_short && o.point ? `${esc(o.point)} · ` : ''}${esc(o.order_no)}${o.revised ? ' · <span class="badge badge-muted">исправлен</span>' : ''}</div>
+                        </td>
+                        <td class="num">${o.positions}</td>
+                        <td class="num"><b>${fmtInt(o.quantity)}</b></td>
+                        <td class="num">${fmtMoney(o.gross)}</td>
+                        <td class="lavka-chev-col"><span class="lavka-chev" aria-hidden="true">›</span></td>
+                    </tr>
+                    <tr class="lavka-order-detail" data-detail="${o.id}">
+                        <td colspan="${cols}"><div class="lavka-expand"><div class="lavka-expand-inner">${orderLines(o)}</div></div></td>
+                    </tr>`).join('')}
+                </tbody>
+            </table>
+        </div>`;
+    }
+
+    const ordersBox = el('orders');
+
+    function toggleOrder(row) {
+        const open = row.getAttribute('aria-expanded') !== 'true';
+        row.setAttribute('aria-expanded', String(open));
+        row.classList.toggle('open', open);
+        ordersBox.querySelector(`[data-detail="${row.dataset.order}"]`).classList.toggle('open', open);
+    }
+
+    ordersBox.addEventListener('click', (e) => {
+        const row = e.target.closest('.lavka-order');
+        if (row) toggleOrder(row);
+    });
+    ordersBox.addEventListener('keydown', (e) => {
+        const row = e.target.closest('.lavka-order');
+        if (row && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggleOrder(row); }
+    });
 
     function delta(now, was, money = false) {
         if (!was) return now ? '<span class="delta delta-flat">не с чем сравнить</span>' : '';
@@ -236,31 +321,6 @@ document.addEventListener('DOMContentLoaded', () => {
             ? `Яндекс ${short(a)}.${String(a.getFullYear()).slice(2)}`
             : `Яндекс ${short(a)}–${short(b)}.${String(b.getFullYear()).slice(2)}`;
         LavkaSheet.open({ start: p.start, end: p.end, label, quantity: fmtInt(current.totals.quantity) });
-    });
-
-    // --- Ручная загрузка файла (админ) ---
-
-    el('uploadBtn').addEventListener('click', () => el('uploadInput').click());
-    el('uploadInput').addEventListener('change', async (e) => {
-        const file = e.target.files[0];
-        e.target.value = '';
-        if (!file) return;
-        const form = new FormData();
-        form.append('file', file);
-        try {
-            const r = await fetch('/api/v1/lavka/upload', { method: 'POST', body: form });
-            const data = await r.json().catch(() => ({}));
-            if (!r.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Не удалось загрузить файл');
-            const parts = [];
-            if (data.created.length) parts.push(`новых заказов: ${data.created.length}`);
-            if (data.revised.length) parts.push(`исправлено: ${data.revised.length}`);
-            if (data.unchanged.length) parts.push(`без изменений: ${data.unchanged.length}`);
-            toast(`Файл загружен: ${parts.join(', ')}`);
-            await loadDates();
-            await loadSummary();
-        } catch (err) {
-            toast(err.message, 'error');
-        }
     });
 
     // --- Привязка штрих-кода Лавки к товару (админ) ---
@@ -394,7 +454,6 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const user = await api('/api/v1/users/me');
             isAdmin = user.role === 'admin';
-            el('uploadBtn').hidden = !isAdmin;
         } catch (err) {
             console.error('Не удалось определить роль:', err);
         }
@@ -410,7 +469,7 @@ document.addEventListener('DOMContentLoaded', () => {
             picker.set('day', day, day);
         }
         if (!dates.length) {
-            content.innerHTML = `<div class="empty-state"><h3>Заказов пока нет</h3>Они появятся после проверки почты${isAdmin ? ' или загрузки файла' : ''}.</div>`;
+            content.innerHTML = `<div class="empty-state"><h3>Заказов пока нет</h3>Они появятся после проверки почты.</div>`;
             el('sheetBtn').disabled = true;
             return;
         }

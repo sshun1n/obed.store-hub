@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=1.15.3">
+    <link rel="stylesheet" href="/static/style.css?v=1.16.0">
     <link rel="expect" href="#hubEnd" blocking="render">
 </head>
 <body>
@@ -38,8 +38,6 @@
                 <div class="period-pop" id="periodPop" role="dialog" aria-label="Выбор даты или периода" hidden></div>
             </div>
             <div class="lavka-actions">
-                <button type="button" class="btn btn-secondary btn-sm" id="uploadBtn" hidden>Загрузить файл</button>
-                <input type="file" id="uploadInput" accept=".xlsx" hidden>
                 <button type="button" class="btn btn-primary btn-sm" id="sheetBtn">Номенклатура</button>
             </div>
         </div>
@@ -54,6 +52,14 @@
 
         <div id="notices"></div>
         <div id="content"><div class="empty-state">Загрузка…</div></div>
+
+        <section class="lavka-orders" id="ordersSection" hidden>
+            <div class="lavka-section-head">
+                <h2 class="card-title-small">Заказы по точкам</h2>
+                <span class="lavka-section-sub" id="ordersSub"></span>
+            </div>
+            <div id="orders"></div>
+        </section>
     </div>
 
     <div class="modal" id="linkModal">
@@ -98,7 +104,7 @@
     <script src="/static/hub-ui.js?v=1.10.0"></script>
     <script src="/static/period-picker.js?v=1.15.0"></script>
     <script src="/static/lavka-sheet.js?v=1.16.0"></script>
-    <script src="/static/lavka.js?v=1.15.1"></script>
+    <script src="/static/lavka.js?v=1.16.1"></script>
     <div id="hubEnd" hidden></div>
 </body>
 </html>

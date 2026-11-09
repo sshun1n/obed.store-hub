@@ -1,4 +1,4 @@
-"""Заказы Яндекс.Лавки: список по дате поставки, проверка почты, ручная загрузка файла."""
+"""Заказы Яндекс.Лавки: сводка и заказы за период, проверка почты, привязка штрих-кодов, лист номенклатуры."""
 import re
 from pathlib import Path
 from urllib.parse import quote
@@ -6,12 +6,12 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import Dict, List, Optional, Tuple
 
-from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import HTMLResponse
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pydantic import BaseModel, Field
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from src import auth, barcodes, crud, database, lavka_mail
 from src.service import parse_weight
@@ -212,20 +212,41 @@ def lavka_journal(limit: int = 50, db: Session = Depends(get_db), admin=Depends(
     } for r in rows]
 
 
-@router.post("/upload")
-async def lavka_upload(file: UploadFile = File(...), db: Session = Depends(get_db), admin=Depends(auth.admin_only)):
-    """Файл заказа вручную: если письмо не дошло или для проверки."""
-    content = await file.read(lavka_mail.MAX_ATTACHMENT + 1)
-    if len(content) > lavka_mail.MAX_ATTACHMENT:
-        raise HTTPException(status_code=413, detail="Файл больше 8 МБ")
-    result = lavka_mail.import_attachment(db, content, filename=file.filename or "")
-    if result.reports:
-        raise HTTPException(status_code=400, detail="Это отчёт Лавки, а не заказ: такие файлы пока не разбираются")
-    if result.errors:
-        raise HTTPException(status_code=400, detail="; ".join(result.errors))
-    if result.skipped:
-        raise HTTPException(status_code=400, detail="Это не файл заказа Лавки или такой файл уже загружали")
-    return {"created": result.created, "revised": result.revised, "unchanged": result.unchanged}
+_ADDRESS_NOISE = re.compile(r"^(\d{6}|.*\sобл\.?|г\.?\s?о\..*|.*\sг\.?|г\.?\s.*|.*\sр-н)$", re.IGNORECASE)
+
+
+def short_address(address: str) -> str:
+    """«603000, Нижегородская обл, Нижний Новгород г, Нестерова ул, дом 22» → «Нестерова ул, дом 22».
+    Индекс, область, город и городской округ одинаковы у всех точек и только мешают читать."""
+    parts = [p.strip() for p in (address or "").split(",") if p.strip()]
+    rest = [p for p in parts if not _ADDRESS_NOISE.match(p)]
+    return ", ".join(rest) or (address or "")
+
+
+@router.get("/orders")
+def lavka_orders(start: date, end: date, db: Session = Depends(get_db), user=Depends(auth.get_current_user)):
+    """Заказы за период по точкам, с позициями: таблица под номенклатурой, строка раскрывается."""
+    if end < start:
+        start, end = end, start
+    if (end - start).days > 400:
+        raise HTTPException(status_code=400, detail="Период длиннее года")
+    order = database.LavkaOrder
+    rows = (db.query(order).options(joinedload(order.point), selectinload(order.lines))
+            .filter(order.delivery_date.between(start, end)).all())
+    result = []
+    for o in rows:
+        lines = sorted(o.lines, key=lambda l: sort_key(l.name, l.quantity))
+        result.append({
+            "id": o.id, "order_no": o.order_no, "delivery_date": o.delivery_date.isoformat(),
+            "point": o.point.name if o.point else "", "address": (o.point.address if o.point else "") or "",
+            "address_short": short_address(o.point.address if o.point else ""),
+            "positions": len(lines), "quantity": int(o.total_quantity or 0), "gross": _money(o.total_gross),
+            "revised": o.revised_at is not None,
+            "lines": [{"barcode": l.barcode, "name": l.name, "quantity": l.quantity,
+                       "price_gross": _money(l.price_gross), "gross": _money(l.sum_gross)} for l in lines],
+        })
+    result.sort(key=lambda r: (r["delivery_date"], (r["address"] or r["point"]).lower()))
+    return result
 
 
 # --- Привязка штрих-кода Лавки к товару справочника ---

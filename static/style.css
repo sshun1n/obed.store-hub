@@ -1904,3 +1904,34 @@ textarea.styled-text-input { resize: vertical; min-height: 64px; line-height: 1.
 .lavka-unmatched { display: flex; align-items: center; gap: 8px; margin-top: 5px; }
 .lavka-unmatched .lavka-link-btn { margin-left: 0; }
 .pp-hint:empty { display: none; }
+
+/* Заказы по точкам: строка раскрывается позициями */
+.lavka-orders { margin-top: 28px; }
+.lavka-section-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+.lavka-section-head h2 { margin: 0; }
+.lavka-section-sub { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
+.lavka-order-table table { min-width: 640px; }
+.lavka-order-table th.num, .lavka-order-table td.num { text-align: right !important; white-space: nowrap; }
+.lavka-order { cursor: pointer; }
+.lavka-order:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+.lavka-order.open td { background: #FAF9F6; }
+.lavka-chev-col { width: 44px !important; padding-left: 0 !important; text-align: right !important; }
+.lavka-chev { display: inline-block; font-size: 1.15rem; line-height: 1; color: var(--muted); transition: transform 0.25s cubic-bezier(0.22, 0.8, 0.3, 1); }
+.lavka-order.open .lavka-chev { transform: rotate(90deg); color: var(--ink); }
+/* Раскрытие по высоте содержимого: grid 0fr → 1fr анимируется без замера высоты */
+.lavka-order-detail td { padding: 0 !important; border-bottom-width: 0; }
+.lavka-order-detail.open td { border-bottom-width: 1px; }
+.lavka-order-detail:hover td { background: transparent; }
+.lavka-expand { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.3s cubic-bezier(0.22, 0.8, 0.3, 1); }
+.lavka-order-detail.open .lavka-expand { grid-template-rows: 1fr; }
+.lavka-expand-inner { overflow: hidden; min-height: 0; opacity: 0; transform: translateY(-4px); transition: opacity 0.2s, transform 0.3s cubic-bezier(0.22, 0.8, 0.3, 1); }
+.lavka-order-detail.open .lavka-expand-inner { opacity: 1; transform: none; }
+.lavka-lines { width: 100%; border-collapse: collapse; margin: 4px 0 14px; background: #FAF9F6; }
+.lavka-lines th, .lavka-lines td { padding: 7px 16px !important; font-size: 0.8rem; border-bottom: 1px solid var(--line); text-align: left; }
+.lavka-lines th { font-family: var(--mono); font-size: 0.62rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.lavka-lines th.num, .lavka-lines td.num { text-align: right !important; white-space: nowrap; }
+.lavka-lines tr:last-child td { border-bottom: none; }
+.lavka-lines tbody tr:hover td { background: transparent; }
+@media (prefers-reduced-motion: reduce) {
+    .lavka-expand, .lavka-expand-inner, .lavka-chev { transition: none; }
+}
