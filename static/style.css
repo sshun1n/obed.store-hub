@@ -2173,3 +2173,4 @@ a.saby-doc:hover, a.saby-doc:hover span { color: var(--red); }
 @media (prefers-reduced-motion: reduce) {
     .saby-table .sel-box, .saby-gear svg { transition: none; }
 }
+.saby-step .btn:disabled { opacity: 0.42; cursor: not-allowed; box-shadow: none; }

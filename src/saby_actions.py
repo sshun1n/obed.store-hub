@@ -602,10 +602,15 @@ def send_signing(token: str, signatures: Dict[str, str]) -> Dict:
 
 # --- Ждём подпись перевозчика ---
 
+WAIT_DAYS = 3   # заказ, не подписанный через 3 дня после поставки, уже не ждём — его разбирают руками
+
+
 def waiting_transports(db) -> List[database.SabyDoc]:
     """Наши заказы на перевозку, ушедшие перевозчику и ещё не подписанные им."""
+    since = sheet_sync.local_now().date() - timedelta(days=WAIT_DAYS)
     return [d for d in db.query(database.SabyDoc).filter(database.SabyDoc.kind == "transport",
-                                                         database.SabyDoc.ours.is_(True))
+                                                         database.SabyDoc.ours.is_(True),
+                                                         database.SabyDoc.delivery_date >= since)
             if d.state not in sc.FINISHED and d.state not in (DRAFT, "Удалён", None, "")
             and "Отклон" not in (d.state or "") and "Ошибк" not in (d.state or "")]
 
