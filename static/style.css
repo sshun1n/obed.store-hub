@@ -2072,3 +2072,8 @@ textarea.styled-text-input { resize: vertical; min-height: 64px; line-height: 1.
 .saby-hint { margin-top: 12px; }
 #registryBtn { cursor: pointer; }
 #registryBtn[hidden] { display: none; }
+.saby-actions { flex-wrap: wrap; justify-content: flex-end; }
+@media (max-width: 760px) {
+    .saby-actions { width: 100%; justify-content: flex-start; }
+    .saby-actions .lavka-mail-state { width: 100%; }
+}
