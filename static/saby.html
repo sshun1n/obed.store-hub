@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>СБИС | OBED.STORE Hub</title>
+    <link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css?v=1.18.0">
+    <link rel="expect" href="#hubEnd" blocking="render">
+</head>
+<body>
+    <script src="/static/components.js?v=1.18.0"></script>
+    <div class="container">
+        <header class="page-header page-head-row">
+            <div>
+                <span class="eyebrow">Лавка и СБИС</span>
+                <h1>СБИС</h1>
+                <p class="subtitle">Что по нашим точкам уже сделано в кабинете. Только просмотр: приложение в СБИС ничего не создаёт и не меняет.</p>
+            </div>
+        </header>
+
+        <div class="controls-panel lavka-controls">
+            <div class="period-picker" id="periodPicker">
+                <button type="button" class="icon-btn" id="prevPeriod" aria-label="Предыдущая поставка">‹</button>
+                <button type="button" class="period-btn" id="periodBtn" aria-haspopup="dialog" aria-expanded="false">
+                    <span class="period-kind" id="periodKind">День</span>
+                    <span class="period-label" id="periodLabel">—</span>
+                    <span class="period-caret" aria-hidden="true">▾</span>
+                </button>
+                <button type="button" class="icon-btn" id="nextPeriod" aria-label="Следующая поставка">›</button>
+                <div class="period-pop" id="periodPop" role="dialog" aria-label="Выбор дня поставки" hidden></div>
+            </div>
+            <div class="lavka-actions">
+                <span class="lavka-mail-state" id="sabyState"></span>
+                <label class="btn btn-secondary btn-sm" id="registryBtn" hidden>
+                    Загрузить реестр 1С
+                    <input type="file" id="registryInput" accept=".xls" hidden>
+                </label>
+                <button type="button" class="btn btn-primary btn-sm" id="refreshBtn">Обновить из СБИС</button>
+            </div>
+        </div>
+
+        <div id="notices"></div>
+        <div id="content"><div class="empty-state">Загрузка…</div></div>
+    </div>
+
+    <script src="/static/hub-ui.js?v=1.10.0"></script>
+    <script src="/static/period-picker.js?v=1.15.0"></script>
+    <script src="/static/saby.js?v=1.18.0"></script>
+    <div id="hubEnd" hidden></div>
+</body>
+</html>

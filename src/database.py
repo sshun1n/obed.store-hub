@@ -276,6 +276,45 @@ class LavkaFeedback(Base):
     comment = Column(Text, nullable=True)
     imported_at = Column(DateTime, default=datetime.utcnow)
 
+# --- СБИС: что прочитано из кабинета (только чтение, этап 5) ---
+
+class SabyDoc(Base):
+    # Документ кабинета, относящийся к нашему дню поставки. Кабинет общий с Ателье,
+    # поэтому храним и чужие заказы на перевозку (ours=False): их карточки уже
+    # прочитаны, и перечитывать их при каждом обновлении незачем
+    __tablename__ = "saby_docs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    saby_id = Column(String(40), unique=True, nullable=False)
+    kind = Column(String(20), nullable=False)          # order | shipment | transport | waybill
+    delivery_date = Column(Date, nullable=False, index=True)   # наш день поставки
+    number = Column(String(40), nullable=True)
+    doc_date = Column(Date, nullable=True)
+    state = Column(String(120), nullable=True)
+    attachments = Column(String(300), nullable=True)   # типы вложений через запятую
+    order_no = Column(String(30), nullable=True, index=True)   # ЯЛ… — связь с нашим заказом
+    parent_id = Column(String(40), nullable=True)      # заказ, из которого сделан документ
+    address = Column(String(400), nullable=True)
+    amount = Column(Numeric(12, 2), nullable=True)
+    cargo = Column(String(150), nullable=True)
+    party = Column(String(300), nullable=True)         # перевозчик у заказа на перевозку
+    link = Column(String(500), nullable=True)          # ссылка в кабинет
+    ours = Column(Boolean, default=True)
+    read_at = Column(DateTime, nullable=True)          # когда открывали карточку (у реализаций — никогда)
+    checked_at = Column(DateTime, default=datetime.utcnow)
+
+class UpdRow(Base):
+    # Строка реестра реализаций из 1С: номер УПД, сумма и адрес точки.
+    # Реестр Обеда свой: 1С отбирает его по ответственному
+    __tablename__ = "upd_rows"
+
+    id = Column(Integer, primary_key=True, index=True)
+    day = Column(Date, nullable=False, index=True)
+    number = Column(String(30), nullable=False)
+    amount = Column(Numeric(12, 2), nullable=False)
+    address = Column(String(300), nullable=True)
+    uploaded_at = Column(DateTime, default=datetime.utcnow)
+
 # --- ЮРЛИЦА И ПЕРЕВОЗЧИКИ (Яндекс.Лавка и СБИС) ---
 
 class LegalEntity(Base):

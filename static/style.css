@@ -2053,3 +2053,22 @@ textarea.styled-text-input { resize: vertical; min-height: 64px; line-height: 1.
     .lc-legend { margin-left: 0; }
     .modal-content.writeoff-modal { overflow-y: auto; }
 }
+
+/* ===== СБИС по дню поставки ===== */
+.saby-stats { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+.saby-stats .stat-value small { font-size: 0.72rem; color: var(--muted); font-weight: 500; }
+.saby-stats .saby-full .stat-value { color: var(--green); }
+.saby-stats .saby-none .stat-value { color: var(--muted); }
+.saby-transport { display: flex; gap: 16px; align-items: center; padding: 14px 18px; margin-bottom: 14px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); }
+.saby-transport-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 4px 0 2px; }
+.saby-transport-none { display: block; color: var(--muted); font-size: 0.86rem; }
+.saby-table table { min-width: 980px; }
+.saby-table td { vertical-align: top; }
+.saby-state { margin-top: 3px; }
+.saby-state .badge { white-space: normal; }
+.saby-link { color: var(--muted); text-decoration: none; font-size: 0.8rem; }
+.saby-link:hover { color: var(--red); }
+.saby-warn { margin-top: 3px; font-size: 0.74rem; color: #8C2317; line-height: 1.35; }
+.saby-hint { margin-top: 12px; }
+#registryBtn { cursor: pointer; }
+#registryBtn[hidden] { display: none; }
