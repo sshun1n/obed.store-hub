@@ -2077,3 +2077,99 @@ textarea.styled-text-input { resize: vertical; min-height: 64px; line-height: 1.
     .saby-actions { width: 100%; justify-content: flex-start; }
     .saby-actions .lavka-mail-state { width: 100%; }
 }
+
+/* ===== СБИС v2: шаги, компактные состояния, выбор точек, настройки ===== */
+.saby-gear { width: 40px; height: 40px; align-self: flex-start; }
+.saby-gear svg { width: 20px; height: 20px; transition: transform 0.4s cubic-bezier(0.22, 0.8, 0.3, 1); }
+.saby-gear:hover svg { transform: rotate(60deg); }
+.saby-gear[hidden] { display: none; }
+
+/* Компактное состояние: одна-две слова, полное — в подсказке */
+.st { display: inline-block; padding: 1px 7px; border-radius: 999px; font-family: var(--mono); font-size: 0.64rem; font-weight: 600; letter-spacing: 0.02em; line-height: 1.6; white-space: nowrap; vertical-align: 1px; border: 1px solid transparent; }
+.st-ok { color: #24522C; background: #EDF3EA; border-color: #C9DCC4; }
+.st-info { color: #2C4F73; background: #E8EFF6; border-color: #C3D3E3; }
+.st-draft { color: #7A5B1E; background: #F6EEDB; border-color: #E6D3A8; }
+.st-bad { color: #8C2317; background: #FBEBE8; border-color: #EFC7C0; }
+.st-muted { color: var(--muted); background: var(--paper); border-color: var(--line-strong); }
+
+.saby-doc { font-weight: 600; color: var(--ink); text-decoration: none; margin-right: 4px; }
+a.saby-doc span { margin-left: 3px; font-size: 0.72rem; color: var(--muted); transition: color 0.12s; }
+a.saby-doc:hover, a.saby-doc:hover span { color: var(--red); }
+.saby-sub { margin-top: 3px; font-size: 0.74rem; color: var(--muted); }
+.saby-none { font-size: 0.8rem; color: var(--muted); }
+.saby-reg { font-family: var(--mono); font-size: 0.66rem; color: var(--muted); }
+.saby-reg-bad { color: #8C2317; }
+
+/* Шаги */
+.saby-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 22px; }
+.saby-step { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); transition: opacity 0.2s, border-color 0.2s; }
+.saby-step header { display: flex; align-items: center; gap: 10px; }
+.saby-step h3 { font-size: 0.92rem; margin: 0; }
+.saby-step-n { display: inline-grid; place-items: center; width: 22px; height: 22px; flex-shrink: 0; border-radius: 50%; background: var(--ink); color: #fff; font-family: var(--mono); font-size: 0.7rem; font-weight: 600; }
+.saby-step.is-done .saby-step-n { background: var(--green); }
+.saby-step.is-done { border-color: #C9DCC4; }
+.saby-step.is-locked { opacity: 0.6; }
+.saby-step-state { margin: 0; font-size: 0.8rem; color: var(--ink-soft); line-height: 1.45; }
+.saby-step-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 4px; }
+.saby-step-actions .btn-sm { padding: 6px 11px; }
+.saby-carrier { width: 100%; min-width: 0; height: 34px; padding-top: 0; padding-bottom: 0; font-size: 0.82rem; }
+.saby-busy .saby-steps, .saby-busy .saby-table { opacity: 0.6; pointer-events: none; transition: opacity 0.2s; }
+
+/* Шапка таблицы и кнопка режима выбора — маленький акцент */
+.saby-table-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 10px; }
+.saby-table-head h2 { margin: 0; }
+.saby-select-toggle {
+    margin-left: auto; display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px;
+    font: inherit; font-size: 0.78rem; font-weight: 500; color: var(--red); cursor: pointer;
+    background: transparent; border: 1px solid rgba(224, 58, 42, 0.35); border-radius: 999px;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.saby-select-toggle:hover { background: #FBF0EE; border-color: var(--red); }
+.saby-select-toggle.on { background: var(--red); color: #fff; border-color: var(--red); }
+.saby-select-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; transition: transform 0.2s; }
+.saby-select-toggle.on .saby-select-dot { transform: scale(0.6); }
+
+/* Колонка выбора выезжает слева */
+.saby-table table { min-width: 860px; }
+.saby-table td { vertical-align: top; }
+.saby-table th:nth-child(2) { width: 34% !important; }
+.saby-table .sel-col { width: 0 !important; padding-left: 0 !important; padding-right: 0 !important; overflow: hidden; }
+.saby-table .sel-box { display: block; width: 0; opacity: 0; transform: translateX(-8px); overflow: hidden; transition: width 0.28s cubic-bezier(0.22, 0.8, 0.3, 1), opacity 0.2s, transform 0.28s cubic-bezier(0.22, 0.8, 0.3, 1); }
+.saby-table.selecting .sel-col { padding-left: 18px !important; }
+.saby-table.selecting .sel-box { width: 22px; opacity: 1; transform: none; }
+.saby-table .sel-box input { width: 16px; height: 16px; margin: 3px 0 0; accent-color: var(--red); cursor: pointer; }
+.saby-table.selecting tbody tr { cursor: pointer; }
+.saby-table.selecting tbody tr:not(.is-selected) td:not(.sel-col) { opacity: 0.5; transition: opacity 0.2s; }
+.saby-table tbody tr td { transition: opacity 0.2s; }
+
+/* Окно настроек */
+.modal-content.saby-settings { max-width: 760px; display: flex; flex-direction: column; gap: 14px; }
+.saby-settings-form { display: flex; flex-direction: column; gap: 18px; }
+.saby-settings-form section { display: flex; flex-direction: column; gap: 10px; padding-top: 14px; border-top: 1px solid var(--line); }
+.saby-settings-form section:first-child { border-top: none; padding-top: 0; }
+.saby-settings-form h3 { font-size: 0.86rem; margin: 0; }
+.saby-settings-form .field-hint { margin: 0; }
+.saby-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.saby-grid .form-group > span:first-child { font-size: 0.74rem; color: var(--muted); }
+.saby-grid .styled-text-input { width: 100%; min-width: 0; }
+.saby-wide { grid-column: span 2; }
+.saby-dims { display: flex; gap: 6px; }
+.saby-toggle { display: flex; align-items: center; justify-content: space-between; gap: 16px; font-size: 0.86rem; cursor: pointer; }
+
+/* Окно подписи */
+.modal-content.saby-sign { max-width: 520px; display: flex; flex-direction: column; gap: 10px; }
+.saby-sign .styled-text-input { width: 100%; }
+.saby-sign-status { min-height: 1.4em; margin: 0; font-size: 0.84rem; color: var(--ink-soft); }
+.saby-sign-status.saby-bad { color: #8C2317; }
+
+@media (max-width: 1100px) {
+    .saby-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+    .saby-steps { grid-template-columns: 1fr; }
+    .saby-grid { grid-template-columns: 1fr 1fr; }
+    .saby-wide { grid-column: span 2; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .saby-table .sel-box, .saby-gear svg { transition: none; }
+}

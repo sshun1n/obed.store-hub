@@ -1,8 +1,7 @@
-"""Клиент Saby (СБИС): вход и чтение. Ничего не создаёт и не меняет.
+"""Клиент Saby (СБИС): вход, чтение, запись документов, переходы и подпись.
 
-Перенесено из ka-webapp (saby.py, edo.py) только то, что нужно для чтения.
-Создание документов (этап 6) будет добавляться сюда же, по одному, вместе с
-владельцем.
+Перенесено из ka-webapp (saby.py, edo.py). Здесь только вызовы API; что и когда
+создавать, решает saby_actions. Документы создаются только по кнопке админа.
 
 Главное правило из ka-webapp: **реализацию (ДокОтгрИсх) не открывать.** Чтение
 карточки незавершённой реализации порождает вторую редакцию уведомления об
@@ -17,6 +16,7 @@
 """
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -109,12 +109,21 @@ def list_documents(sid: str, url: str, doc_type: str, *, start: Optional[date] =
             return
 
 
-def read_card(sid: str, url: str, ident: str, kind: str) -> dict:
-    """Карточка документа. Реализацию — никогда, см. начало модуля."""
+def read_card(sid: str, url: str, ident: str, kind: str, state: str = "") -> dict:
+    """Карточка документа. Реализацию — только завершённую, см. начало модуля.
+
+    Завершённые реализации нужны одному месту: образцу уведомления об отгрузке и
+    каталогу позиций. Их ka-webapp читал сотнями без единой новой редакции.
+    Состояние передаёт вызывающий, взяв его из списка: узнавать его чтением
+    карточки уже поздно.
+    """
+    if kind == SHIPMENT_TYPE and state not in FINISHED:
+        raise SabyError(f"Реализацию в состоянии «{state or 'неизвестно'}» открывать нельзя: у незавершённой "
+                        "появляется вторая редакция уведомления и перестаёт уходить УПД. "
+                        "Берите данные из СписокДокументов")
     if kind == SHIPMENT_TYPE:
-        raise SabyError("Реализацию открывать нельзя: у незавершённой появляется вторая редакция "
-                        "уведомления и перестаёт уходить УПД. Берите данные из СписокДокументов")
-    if kind not in (ORDER_TYPE, TRANSPORT_TYPE, WAYBILL_TYPE):
+        url = DOCS_URL
+    if kind not in (ORDER_TYPE, SHIPMENT_TYPE, TRANSPORT_TYPE, WAYBILL_TYPE):
         raise SabyError(f"Чтение документов типа «{kind}» не проверялось")
     card = _post(url, "СБИС.ПрочитатьДокумент", {"Документ": {"Идентификатор": ident}}, sid) or {}
     if card.get("Тип") and card["Тип"] != kind:
@@ -176,3 +185,109 @@ def party_name(card: dict) -> str:
         return person.get("НазваниеПолное") or " ".join(
             x for x in (person.get("Фамилия"), person.get("Имя"), person.get("Отчество")) if x)
     return (party.get("СвЮЛ") or {}).get("Название") or ""
+
+
+# --- Запись, переходы, подпись ---
+
+def write_document(sid: str, url: str, document: dict) -> dict:
+    return _post(url, "СБИС.ЗаписатьДокумент", {"Документ": document}, sid) or {}
+
+
+def generate_attachment(sid: str, kind: str, subtype: str, version: str, payload: dict) -> dict:
+    """Файл документа по подстановке: формат ФНС собирает сам СБИС."""
+    generated = _post(TMS_URL, "СБИС.СгенерироватьВложение", {"Документ": {"Вложение": [
+        {"Тип": kind, "Подтип": subtype, "ВерсияФормата": version, "Подстановка": payload}]}}, sid)
+    return generated["Вложение"][0]["Файл"]
+
+
+def run_action(sid: str, url: str, doc_id: str, stage: str, action: str, stage_id: str = "") -> dict:
+    """Переход без подписи: подготовка и выполнение, как требует справка."""
+    step: dict = {"Название": stage, "Действие": {"Название": action}}
+    if stage_id:
+        step["Идентификатор"] = stage_id
+    _post(url, "СБИС.ПодготовитьДействие", {"Документ": {"Идентификатор": doc_id, "Этап": step}}, sid)
+    return _post(url, "СБИС.ВыполнитьДействие", {"Документ": {"Идентификатор": doc_id, "Этап": step}}, sid)
+
+
+def pending_action(card: dict, preferred: tuple) -> tuple:
+    """Этап и переход, которые ждут подписи. Не угадываем: если вариантов несколько
+    и ни один не из preferred — останавливаемся и перечисляем."""
+    options = []
+    for stage in card.get("Этап") or []:
+        if stage.get("Служебный") == "Да":
+            continue
+        options += [(stage.get("Название") or "", a.get("Название") or "")
+                    for a in stage.get("Действие") or [] if a.get("ТребуетПодписания") == "Да"]
+    if not options:
+        raise SabyError("документу сейчас нечего подписывать — вероятно, он уже отправлен")
+    for wanted in preferred:
+        for option in options:
+            if option[1] == wanted:
+                return option
+    if len(options) == 1:
+        return options[0]
+    raise SabyError("не понял, какой шаг подписывать: " + ", ".join(f"«{a}: {b}»" for a, b in options))
+
+
+def prepare_sign(sid: str, url: str, doc_id: str, kind: str, thumbprint: str, preferred: tuple) -> dict:
+    """Готовит документ к подписи в браузере и отдаёт файлы, которые надо подписать.
+
+    Только для документов TMS: реализации в ЭДО подписью тут не отправляются.
+    """
+    card = read_card(sid, url, doc_id, kind)
+    stage, action = pending_action(card, preferred)
+    prepared = _post(url, "СБИС.ПодготовитьДействие", {"Документ": {"Идентификатор": doc_id, "Этап": {
+        "Название": stage, "Действие": {"Название": action, "Сертификат": {"Отпечаток": thumbprint}}}}}, sid) or {}
+    files = []
+    for prepared_stage in prepared.get("Этап") or []:
+        for attachment in prepared_stage.get("Вложение") or []:
+            file = attachment.get("Файл") or {}
+            if not attachment.get("Идентификатор") or not file.get("Ссылка"):
+                continue
+            request = urllib.request.Request(file["Ссылка"], headers={SESSION_HEADER: sid})
+            with urllib.request.urlopen(request, timeout=60) as response:
+                raw = response.read()
+            files.append({"id": attachment["Идентификатор"], "name": file.get("Имя") or "",
+                          "data": base64.b64encode(raw).decode()})
+    if not files:
+        raise SabyError("СБИС не вернул файл для подписи")
+    return {"id": doc_id, "stage": stage, "action": action, "files": files}
+
+
+def send_signed(sid: str, url: str, doc_id: str, stage: str, action: str, thumbprint: str,
+                signatures: Dict[str, str]) -> dict:
+    """Подпись сделана в браузере (Ключ.Тип = «Клиентский») — отправляем её в СБИС."""
+    return _post(url, "СБИС.ВыполнитьДействие", {"Документ": {"Идентификатор": doc_id, "Этап": {
+        "Название": stage,
+        "Действие": [{"Название": action, "Сертификат": {"Отпечаток": thumbprint, "Ключ": {"Тип": "Клиентский"}}}],
+        "Вложение": [{"Идентификатор": fid, "Подпись": [{"Файл": {"ДвоичныеДанные": sig}}]}
+                     for fid, sig in sorted(signatures.items())],
+    }}}, sid)
+
+
+def max_number(sid: str, doc_type: str) -> int:
+    """Наибольший номер документа этого типа в кабинете. Нумерация общая с Ателье
+    и раздельная у заказов и накладных, поэтому считаем по кабинету, а не по себе."""
+    numbers = []
+    for item in list_documents(sid, TMS_URL, doc_type, pages=2):
+        value = str(item.get("Номер") or "").strip()
+        if value.isdigit():
+            numbers.append(int(value))
+    return max(numbers, default=0)
+
+
+def xml_attachment(sid: str, card: dict, fmt: str) -> str:
+    """Вложение ЭДО по атрибуту «Формат» внутри файла (Заказ, УведомлОтгр), а не по имени."""
+    import xml.etree.ElementTree as ET
+    for item in card.get("Вложение") or []:
+        file = item.get("Файл") or {}
+        link, name = file.get("Ссылка"), file.get("Имя") or ""
+        if not link or not name.lower().endswith(".xml"):
+            continue
+        try:
+            text = download(sid, link)
+            if ET.fromstring(text).get("Формат") == fmt:
+                return text
+        except Exception:
+            continue
+    return ""

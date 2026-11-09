@@ -302,6 +302,54 @@ class SabyDoc(Base):
     ours = Column(Boolean, default=True)
     read_at = Column(DateTime, nullable=True)          # когда открывали карточку (у реализаций — никогда)
     checked_at = Column(DateTime, default=datetime.utcnow)
+    # Документ создан приложением (а не руками в кабинете) и кем
+    created_by_app = Column(Boolean, default=False)
+    created_by = Column(String(100), nullable=True)
+    carrier_id = Column(Integer, nullable=True)        # у заказа на перевозку
+    next_check_at = Column(DateTime, nullable=True)    # когда снова спросить, подписал ли перевозчик
+
+class SabySettings(Base):
+    # Настройки страницы «СБИС»: что показывать, как часто проверять подпись перевозчика
+    # и всё для заказа на перевозку и ЭТрН Обеда. Значения по умолчанию — из заказа
+    # № 44 от 10.09.2026, сделанного руками в кабинете. У Ателье они другие
+    __tablename__ = "saby_settings"
+
+    id = Column(Integer, primary_key=True)
+    hide_split_shipments = Column(Boolean, default=False)   # прятать «Создать» и «Провести» по отдельности
+    hide_split_transport = Column(Boolean, default=False)
+    hide_split_waybills = Column(Boolean, default=False)
+    poll_minutes = Column(Integer, default=20)              # проверка подписи перевозчика
+    pickup_address = Column(String(300), default="Нижний Новгород, Агрономическая улица, д. 89")
+    pickup_time = Column(String(5), default="06:30")        # подача машины
+    departure_time = Column(String(5), default="06:45")     # убытие с погрузки
+    unload_time = Column(String(5), default="07:00")        # выгрузка в точках
+    cargo_name = Column(String(150), default="Готовые обеды")
+    cargo_state = Column(String(200), default="Упаковано в термосумку, целостность не нарушена")
+    place_weight_kg = Column(Float, default=3.5)
+    place_volume_m3 = Column(Float, default=0.035)
+    bag_length_cm = Column(Integer, default=43)
+    bag_width_cm = Column(Integer, default=42)
+    bag_height_cm = Column(Integer, default=28)
+    temp_min = Column(Integer, default=2)
+    temp_max = Column(Integer, default=6)
+    sanitary_norms = Column(String(150), default="СанПиН 2.3/2.4.3590-20")
+    vehicle_type = Column(String(60), default="легковая")
+    body_type = Column(String(60), default="закрытый")
+    loading_type = Column(String(60), default="ручная")
+    capacity_t = Column(Float, default=0.5)
+    volume_m3 = Column(Float, default=0.85)
+    last_carrier_id = Column(Integer, nullable=True)
+
+class EdoItem(Base):
+    # Каталог позиций для уведомления об отгрузке: как кабинет называет товар Лавки
+    # (по её коду покупателя) и какой код ставит. Наполняется из завершённых реализаций
+    __tablename__ = "edo_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    buyer_code = Column(String(40), unique=True, nullable=False)
+    name = Column(String(300), nullable=True)
+    code = Column(String(60), nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow)
 
 class UpdRow(Base):
     # Строка реестра реализаций из 1С: номер УПД, сумма и адрес точки.

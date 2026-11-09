@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=1.18.1">
+    <link rel="stylesheet" href="/static/style.css?v=1.19.0">
     <link rel="expect" href="#hubEnd" blocking="render">
 </head>
 <body>
@@ -18,8 +18,11 @@
             <div>
                 <span class="eyebrow">Лавка и СБИС</span>
                 <h1>СБИС</h1>
-                <p class="subtitle">Что по нашим точкам уже сделано в кабинете. Только просмотр: приложение в СБИС ничего не создаёт и не меняет.</p>
+                <p class="subtitle">Документы по нашим точкам за день поставки и следующий шаг по ним.</p>
             </div>
+            <button type="button" class="icon-btn saby-gear" id="settingsBtn" aria-label="Настройки СБИС" title="Настройки СБИС" hidden>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+            </button>
         </header>
 
         <div class="controls-panel lavka-controls">
@@ -35,21 +38,100 @@
             </div>
             <div class="lavka-actions saby-actions">
                 <span class="lavka-mail-state" id="sabyState"></span>
-                <label class="btn btn-secondary btn-sm" id="registryBtn" hidden>
-                    Загрузить реестр 1С
-                    <input type="file" id="registryInput" accept=".xls" hidden>
-                </label>
-                <button type="button" class="btn btn-primary btn-sm" id="refreshBtn">Обновить из СБИС</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="refreshBtn">Обновить из СБИС</button>
             </div>
         </div>
+        <input type="file" id="registryInput" accept=".xls" hidden>
 
         <div id="notices"></div>
         <div id="content"><div class="empty-state">Загрузка…</div></div>
     </div>
 
+    <div class="modal" id="settingsModal">
+        <div class="modal-content saby-settings" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+            <header class="sheet-modal-head">
+                <div>
+                    <span class="eyebrow">СБИС</span>
+                    <h2 class="card-title-small" id="settingsTitle">Настройки</h2>
+                </div>
+                <button type="button" class="icon-btn" data-close aria-label="Закрыть">&times;</button>
+            </header>
+            <form id="settingsForm" class="saby-settings-form">
+                <section>
+                    <h3>Кнопки</h3>
+                    <p class="field-hint">Рядом с «Создать и провести» есть кнопки для отдельных шагов. Их можно спрятать.</p>
+                    <label class="saby-toggle"><span>Реализации: прятать «Создать» и «Провести»</span><span class="switch"><input type="checkbox" name="hide_split_shipments"><span class="switch-track"></span></span></label>
+                    <label class="saby-toggle"><span>Заказ на перевозку: прятать «Создать» и «Подписать»</span><span class="switch"><input type="checkbox" name="hide_split_transport"><span class="switch-track"></span></span></label>
+                    <label class="saby-toggle"><span>ЭТрН: прятать «Создать» и «Подписать»</span><span class="switch"><input type="checkbox" name="hide_split_waybills"><span class="switch-track"></span></span></label>
+                </section>
+                <section>
+                    <h3>Подпись перевозчика</h3>
+                    <div class="saby-grid">
+                        <label class="form-group"><span>Проверять каждые, мин</span><input class="styled-text-input" type="number" name="poll_minutes" min="5" max="240" required></label>
+                    </div>
+                    <p class="field-hint">Пока перевозчик не подписал заказ на перевозку, приложение само спрашивает СБИС. Подписал — проверка этого дня прекращается, другие дни ждут своё.</p>
+                </section>
+                <section>
+                    <h3>Погрузка и выгрузка</h3>
+                    <div class="saby-grid">
+                        <label class="form-group saby-wide"><span>Адрес погрузки</span><input class="styled-text-input" name="pickup_address" required></label>
+                        <label class="form-group"><span>Подача машины</span><input class="styled-text-input" type="time" name="pickup_time" required></label>
+                        <label class="form-group"><span>Убытие</span><input class="styled-text-input" type="time" name="departure_time" required></label>
+                        <label class="form-group"><span>Выгрузка в точках</span><input class="styled-text-input" type="time" name="unload_time" required></label>
+                    </div>
+                </section>
+                <section>
+                    <h3>Груз</h3>
+                    <div class="saby-grid">
+                        <label class="form-group"><span>Наименование</span><input class="styled-text-input" name="cargo_name" required></label>
+                        <label class="form-group saby-wide"><span>Состояние</span><input class="styled-text-input" name="cargo_state" required></label>
+                        <label class="form-group"><span>Масса места, кг</span><input class="styled-text-input" type="number" step="0.01" name="place_weight_kg" required></label>
+                        <label class="form-group"><span>Объём места, м³</span><input class="styled-text-input" type="number" step="0.001" name="place_volume_m3" required></label>
+                        <label class="form-group"><span>Термосумка Д×Ш×В, см</span>
+                            <span class="saby-dims"><input class="styled-text-input" type="number" name="bag_length_cm" required><input class="styled-text-input" type="number" name="bag_width_cm" required><input class="styled-text-input" type="number" name="bag_height_cm" required></span></label>
+                        <label class="form-group"><span>Температура, °C</span>
+                            <span class="saby-dims"><input class="styled-text-input" type="number" name="temp_min" required><input class="styled-text-input" type="number" name="temp_max" required></span></label>
+                        <label class="form-group saby-wide"><span>Санитарные нормы</span><input class="styled-text-input" name="sanitary_norms"></label>
+                    </div>
+                </section>
+                <section>
+                    <h3>Требования к машине</h3>
+                    <div class="saby-grid">
+                        <label class="form-group"><span>Тип</span><input class="styled-text-input" name="vehicle_type" required></label>
+                        <label class="form-group"><span>Кузов</span><input class="styled-text-input" name="body_type" required></label>
+                        <label class="form-group"><span>Погрузка</span><input class="styled-text-input" name="loading_type" required></label>
+                        <label class="form-group"><span>Грузоподъёмность, т</span><input class="styled-text-input" type="number" step="0.01" name="capacity_t" required></label>
+                        <label class="form-group"><span>Объём, м³</span><input class="styled-text-input" type="number" step="0.01" name="volume_m3" required></label>
+                    </div>
+                    <p class="field-hint">Реквизиты сторон берутся из «Юрлиц», машина и водитель — из карточки перевозчика.</p>
+                </section>
+                <span class="error-msg" id="settingsError"></span>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" data-close>Отмена</button>
+                    <button type="submit" class="btn btn-primary">Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="modal" id="signModal" data-keep-open>
+        <div class="modal-content saby-sign" role="dialog" aria-modal="true" aria-labelledby="signTitle">
+            <span class="eyebrow">Подпись Рутокеном</span>
+            <h2 class="card-title-small" id="signTitle">Подписать</h2>
+            <p class="field-hint" id="signWhat"></p>
+            <label class="form-group" id="signCertBox" hidden><span>Сертификат</span><select class="styled-text-input" id="signCert"></select></label>
+            <p class="saby-sign-status" id="signStatus"></p>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" id="signCancel">Отмена</button>
+                <button type="button" class="btn btn-primary" id="signGo" disabled>Подписать и отправить</button>
+            </div>
+        </div>
+    </div>
+
     <script src="/static/hub-ui.js?v=1.10.0"></script>
     <script src="/static/period-picker.js?v=1.15.0"></script>
-    <script src="/static/saby.js?v=1.18.0"></script>
+    <script src="/static/saby-sign.js?v=1.19.0"></script>
+    <script src="/static/saby.js?v=1.19.0"></script>
     <div id="hubEnd" hidden></div>
 </body>
 </html>

@@ -70,6 +70,8 @@ async def startup_event() -> None:
         logger.critical(f"Ошибка старта: {e}", exc_info=True)
     sheet_sync.start_scheduler()
     lavka_mail.start_scheduler()
+    from src import saby_actions
+    saby_actions.start_poller()
 
 # --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 

@@ -18,7 +18,7 @@ import logging
 import threading
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
-from typing import Dict, Optional, Set
+from typing import Callable, Dict, Optional, Set
 
 from src import database, saby_client as sc, sheet_sync
 
@@ -29,7 +29,8 @@ OBED_CARGO = "готовые обеды"
 ORDER_LOOKBACK_DAYS = 14   # заказ в СБИС датирован днём, когда Лавка его прислала
 
 _lock = threading.Lock()
-_progress: Dict = {"running": False, "day": None, "step": "", "done": 0, "total": 0, "error": None, "finished_at": None}
+_progress: Dict = {"running": False, "day": None, "label": "", "step": "", "done": 0, "total": 0,
+                   "error": None, "result": None, "finished_at": None}
 
 
 def progress() -> Dict:
@@ -209,24 +210,43 @@ def refresh_day(day: date) -> None:
         db.close()
 
 
-def _worker(day: date) -> None:
+def _worker(day: date, label: str, action: Optional[Callable[[], Dict]]) -> None:
+    """Одна операция с кабинетом: действие (если есть), затем перечитать день.
+
+    Перечитываем всегда, даже после ошибки: часть документов могла успеть
+    создаться, и страница должна показать кабинет как есть, а не как задумано.
+    """
     try:
         with _lock:
-            refresh_day(day)
+            try:
+                if action is not None:
+                    # Перед записью — свежий кабинет: точку могли провести руками минуту назад
+                    _step("Сверяю день с кабинетом")
+                    refresh_day(day)
+                    _progress["result"] = action() or {}
+            finally:
+                _step("Перечитываю день")
+                refresh_day(day)
         _progress["error"] = None
     except sc.SabyError as exc:
         _progress["error"] = str(exc)
     except Exception as exc:
-        logger.error(f"Ошибка чтения СБИС за {day}: {exc}", exc_info=True)
+        logger.error(f"Ошибка операции СБИС «{label}» за {day}: {exc}", exc_info=True)
         _progress["error"] = f"Сбой: {exc}"
     finally:
         _progress["running"] = False
         _progress["finished_at"] = sheet_sync.local_now().isoformat(timespec="seconds")
 
 
-def start(day: date) -> bool:
+def start(day: date, label: str = "Чтение СБИС", action: Optional[Callable[[], Dict]] = None) -> bool:
+    """Запустить операцию в фоне. Занято — False: одна операция с кабинетом за раз."""
     if _progress["running"]:
         return False
-    _progress.update(running=True, day=day.isoformat(), step="Начинаю", done=0, total=0, error=None)
-    threading.Thread(target=_worker, args=(day,), name="saby-read", daemon=True).start()
+    _progress.update(running=True, day=day.isoformat(), label=label, step="Начинаю", done=0, total=0,
+                     error=None, result=None)
+    threading.Thread(target=_worker, args=(day, label, action), name="saby-task", daemon=True).start()
     return True
+
+
+def step(text: str, done: Optional[int] = None, total: Optional[int] = None) -> None:
+    _step(text, done, total)
