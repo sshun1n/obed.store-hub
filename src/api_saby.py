@@ -72,6 +72,7 @@ def saby_day(day: date, db: Session = Depends(get_db), user=Depends(auth.get_cur
     registry = db.query(database.UpdRow).filter(database.UpdRow.day == day).order_by(database.UpdRow.number).all()
     free = list(registry)
 
+    weights, unknown_weight = saby_actions.cargo_weights(db, orders, settings.bag_weight_kg)
     points = []
     for o in sorted(orders, key=lambda x: (x.point.address or x.point.name or "")):
         shipment = by_kind["shipment"].get(o.order_no)
@@ -94,6 +95,7 @@ def saby_day(day: date, db: Session = Depends(get_db), user=Depends(auth.get_cur
             "order_no": o.order_no, "point": o.point.name, "address": o.point.address,
             "address_short": short_address(o.point.address or ""), "gross": _money(gross),
             "quantity": o.total_quantity,
+            "weight_kg": float(weights.get(o.order_no, 0)),
             "order": _doc(by_kind["order"].get(o.order_no)),
             "shipment": _doc(shipment),
             "waybill": _doc(by_kind["waybill"].get(o.order_no)),
@@ -140,6 +142,8 @@ def saby_day(day: date, db: Session = Depends(get_db), user=Depends(auth.get_cur
             "next_check_at": _local(ours_transport.next_check_at) if waiting else None,
         },
         "draft_waybills": draft_waybills,
+        "weight_kg": float(sum(weights.values())),
+        "unknown_weight": unknown_weight,
         "stats": {
             "points": n,
             "orders": sum(1 for p in points if p["order"]),
@@ -189,7 +193,7 @@ class SettingsIn(BaseModel):
     unload_time: str = Field(..., pattern=r"^\d{2}:\d{2}$")
     cargo_name: str = Field(..., min_length=2, max_length=150)
     cargo_state: str = Field(..., min_length=2, max_length=200)
-    place_weight_kg: float = Field(..., gt=0, le=100)
+    bag_weight_kg: float = Field(..., ge=0, le=20)
     place_volume_m3: float = Field(..., gt=0, le=5)
     bag_length_cm: int = Field(..., gt=0, le=300)
     bag_width_cm: int = Field(..., gt=0, le=300)

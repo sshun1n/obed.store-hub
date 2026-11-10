@@ -111,7 +111,7 @@
                     <div class="saby-grid">
                         <label class="form-group"><span>Наименование</span><input class="styled-text-input" name="cargo_name" required></label>
                         <label class="form-group saby-wide"><span>Состояние</span><input class="styled-text-input" name="cargo_state" required></label>
-                        <label class="form-group"><span>Масса места, кг</span><input class="styled-text-input" type="number" step="0.01" name="place_weight_kg" required></label>
+                        <label class="form-group"><span>Масса тары на точку, кг</span><input class="styled-text-input" type="number" step="0.01" min="0" name="bag_weight_kg" required></label>
                         <label class="form-group"><span>Объём места, м³</span><input class="styled-text-input" type="number" step="0.001" name="place_volume_m3" required></label>
                         <label class="form-group"><span>Термосумка Д×Ш×В, см</span>
                             <span class="saby-dims"><input class="styled-text-input" type="number" name="bag_length_cm" required><input class="styled-text-input" type="number" name="bag_width_cm" required><input class="styled-text-input" type="number" name="bag_height_cm" required></span></label>
@@ -119,6 +119,7 @@
                             <span class="saby-dims"><input class="styled-text-input" type="number" name="temp_min" required><input class="styled-text-input" type="number" name="temp_max" required></span></label>
                         <label class="form-group saby-wide"><span>Санитарные нормы</span><input class="styled-text-input" name="sanitary_norms"></label>
                     </div>
+                    <p class="field-hint">Вес точки — позиции заказа (штуки × вес штуки) плюс тара; вес рейса — сумма по точкам. Вес штуки берётся из карточки товара, иначе из названия Лавки («…, 250 г»).</p>
                 </section>
                 <section>
                     <h3>Требования к машине</h3>
@@ -158,7 +159,7 @@
     <script src="/static/time-picker.js?v=1.21.0"></script>
     <script src="/static/period-picker.js?v=1.19.0"></script>
     <script src="/static/saby-sign.js?v=1.19.0"></script>
-    <script src="/static/saby.js?v=1.21.0"></script>
+    <script src="/static/saby.js?v=1.22.0"></script>
     <div id="hubEnd" hidden></div>
 </body>
 </html>

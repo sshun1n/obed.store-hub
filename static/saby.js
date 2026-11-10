@@ -30,6 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (d === Hub.isoDate(tomorrow)) return `завтра в ${t.slice(0, 5)}`;
         return `${Hub.fmtDate(d)} в ${t.slice(0, 5)}`;
     };
+    const kg = (v) => `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 }).format(v || 0)} кг`;
     const plural = (n, one, few, many) => {
         const m10 = n % 10, m100 = n % 100;
         if (m10 === 1 && m100 !== 11) return one;
@@ -138,7 +139,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 admin && tr.draft ? btn('transport-sign', 'Подписать', { primary: true }) : '', !tr.draft);
         } else {
             const options = d.carriers.map(c => `<option value="${c.id}"${c.id === (carrierId || d.last_carrier_id) ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
-            step3 = stepCard(3, 'Заказ на перевозку', `Ещё не создан · точек в рейсе: ${t.length}`,
+            step3 = stepCard(3, 'Заказ на перевозку', `Ещё не создан · точек в рейсе: ${t.length}, ${kg(t.reduce((a, p) => a + p.weight_kg, 0))}`,
                 admin ? (d.carriers.length ? `<select class="styled-text-input saby-carrier" id="carrierSelect" aria-label="Перевозчик">${options}</select>
                     ${btn('transport-all', 'Создать и подписать', { primary: true, disabled: !t.length })}
                     ${set.hide_split_transport ? '' : btn('transport-create', 'Создать', { disabled: !t.length })}
@@ -193,7 +194,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <td class="sel-col"><span class="sel-box"><input type="checkbox" data-pick="${esc(p.order_no)}" aria-label="Выбрать точку"${selected.has(p.order_no) ? ' checked' : ''}></span></td>
                         <td>
                             <div title="${esc(p.address || '')}">${esc(p.address_short || p.point)}</div>
-                            <div class="saby-sub">${esc(p.order_no)} · ${fmtInt(p.quantity)} шт · ${fmtMoney(p.gross)}</div>
+                            <div class="saby-sub">${esc(p.order_no)} · ${fmtInt(p.quantity)} шт · ${kg(p.weight_kg)} · ${fmtMoney(p.gross)}</div>
                         </td>
                         <td>${shipmentCell(p)}</td>
                         <td>${waybillCell(p.waybill)}</td>
@@ -212,6 +213,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (errs.length) parts.push(`<div class="lavka-notice"><b>Не вышло:</b> ${errs.map(([k, v]) => `${esc(k)} — ${esc(v)}`).join('; ')}</div>`);
             if ((lastResult.notes || []).length) parts.push(`<div class="lavka-notice lavka-notice-info">${lastResult.notes.map(esc).join('<br>')}</div>`);
         }
+        if ((d.unknown_weight || []).length) parts.push(`<div class="lavka-notice">Вес не определился — в перевозке посчитан нулём: ${d.unknown_weight.map(esc).join(', ')}. Укажите вес в карточке товара.</div>`);
         if (d.loose_waybills.length) parts.push(`<div class="lavka-notice">ЭТрН с грузом Обеда без нашего номера заказа: ${d.loose_waybills.map(w => `№ ${esc(w.number)}`).join(', ')}.</div>`);
         if (d.registry_free.length) parts.push(`<div class="lavka-notice lavka-notice-info">В реестре 1С за этот день есть строки без нашей точки: ${d.registry_free.map(r => `№ ${esc(r.number)} ${esc(r.address || '')}`).join('; ')}.</div>`);
         notices.innerHTML = parts.join('');

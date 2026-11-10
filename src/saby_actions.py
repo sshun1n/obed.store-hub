@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import re
 import secrets
 import xml.etree.ElementTree as ET
 from datetime import date, datetime, timedelta, timezone
@@ -20,6 +21,7 @@ from decimal import Decimal
 from typing import Dict, List, Optional, Tuple
 
 from src import database, desadv, saby_client as sc, saby_sync, sheet_sync, upd_registry
+from src.service import parse_weight
 
 logger = logging.getLogger("SabyActions")
 
@@ -79,11 +81,51 @@ def _num(value) -> str:
     return text.rstrip("0").rstrip(".") if "." in text else text
 
 
+# --- Вес груза ---
+#
+# Вес точки — позиции заказа (штуки × вес штуки) плюс тара. Вес штуки: ручная
+# правка в карточке товара, иначе из названия Лавки («…, 250 г»), иначе из
+# названия в справочнике. Что не определилось, считаем нулём и показываем.
+
+LAVKA_WEIGHT_RE = re.compile(r"(\d+(?:[.,]\d+)?)\s*(кг|г)(?![а-яё])", re.IGNORECASE)
+
+
+def item_grams(name: str, product: Optional[database.Product]) -> Optional[int]:
+    if product is not None and product.weight_grams:
+        return int(product.weight_grams)
+    found = LAVKA_WEIGHT_RE.findall(name or "")
+    if found:
+        # Последнее число: в начале названия бывают числа состава, вес — в конце
+        value, unit = found[-1]
+        return int(Decimal(value.replace(",", ".")) * (1000 if unit.lower() == "кг" else 1))
+    if product is not None and product.name_from_sheet:
+        return parse_weight(product.name_from_sheet)
+    return None
+
+
+def cargo_weights(db, orders: List[database.LavkaOrder], bag_kg: float) -> Tuple[Dict[str, Decimal], List[str]]:
+    """Вес каждой точки в кг (с тарой) и названия позиций, чей вес неизвестен."""
+    codes = {line.barcode for o in orders for line in o.lines}
+    products = {p.barcode: p for p in db.query(database.Product).filter(database.Product.barcode.in_(codes))} if codes else {}
+    weights, unknown = {}, set()
+    for o in orders:
+        grams = 0
+        for line in o.lines:
+            one = item_grams(line.name, products.get(line.barcode))
+            if one is None:
+                unknown.add(line.name)
+                continue
+            grams += one * int(line.quantity or 0)
+        weights[o.order_no] = (Decimal(grams) / 1000 + Decimal(str(bag_kg or 0))).quantize(Decimal("0.001"))
+    return weights, sorted(unknown)
+
+
 # --- Точки дня ---
 
 def _orders(db, day: date, numbers: List[str]) -> List[database.LavkaOrder]:
     from sqlalchemy.orm import joinedload
-    query = (db.query(database.LavkaOrder).options(joinedload(database.LavkaOrder.point))
+    query = (db.query(database.LavkaOrder).options(joinedload(database.LavkaOrder.point),
+                                                   joinedload(database.LavkaOrder.lines))
              .filter(database.LavkaOrder.delivery_date == day))
     orders = query.all()
     if numbers:
@@ -292,11 +334,12 @@ def _contacts(phone: Optional[str]) -> dict:
     return {"Телефон": [{"Значение": phone}]} if phone else {}
 
 
-def transport_payload(s: database.SabySettings, own, carrier, orders, number: str, day: date) -> dict:
+def transport_payload(s: database.SabySettings, own, carrier, orders, number: str, day: date,
+                      weights: Dict[str, Decimal]) -> dict:
     """Заказ на перевозку на весь день: все точки — одним рейсом, как № 44 из кабинета."""
     stamp = day.strftime("%d.%m.%Y")
     places = len(orders)
-    weight = Decimal(str(s.place_weight_kg)) * places
+    weight = sum((weights[o.order_no] for o in orders), Decimal("0"))
     return {
         "Документ": {"Номер": number, "Дата": stamp, "Тип": "Заказ",
                      "СодержаниеОперации": "Предоставление заказа и заявки на перевозку груза автомобильным транспортом"},
@@ -357,10 +400,11 @@ def create_transport(day: date, numbers: List[str], carrier_id: int, user: str) 
         orders = _orders(db, day, numbers)
         saby_sync.step("Вход в СБИС")
         sid = sc.login()
+        weights, unknown = cargo_weights(db, orders, s.bag_weight_kg)
         number = str(sc.max_number(sid, sc.TRANSPORT_TYPE) + 1)
         saby_sync.step(f"Создаю заказ на перевозку № {number}")
         file = sc.generate_attachment(sid, TRANSPORT_ATTACH, TRANSPORT_KND, FORMAT_VERSION,
-                                      transport_payload(s, own, carrier, orders, number, day))
+                                      transport_payload(s, own, carrier, orders, number, day, weights))
         doc = sc.write_document(sid, sc.TMS_URL, {
             "Тип": sc.TRANSPORT_TYPE, "Регламент": {"Название": TRANSPORT_RULE},
             # Даже для ИП блок называется «СвЮЛ»: форму собственности СБИС определит по ИНН
@@ -372,16 +416,20 @@ def create_transport(day: date, numbers: List[str], carrier_id: int, user: str) 
         db.add(row)
         s.last_carrier_id = carrier.id
         db.commit()
-        return {"done": [f"заказ на перевозку № {row.number}"], "errors": {}, "notes": [], "doc_ids": [row.saby_id]}
+        notes = [f"Вес не определился, посчитан нулём: {', '.join(unknown)}"] if unknown else []
+        total = sum(weights.values(), Decimal("0"))
+        return {"done": [f"заказ на перевозку № {row.number}, {_num(total)} кг"], "errors": {}, "notes": notes,
+                "doc_ids": [row.saby_id]}
     finally:
         db.close()
 
 
 # --- ЭТрН ---
 
-def waybill_payload(s, own, buyer, carrier, order, number: str, transport: database.SabyDoc, day: date) -> dict:
+def waybill_payload(s, own, buyer, carrier, order, number: str, transport: database.SabyDoc, day: date,
+                    weight_kg: Decimal) -> dict:
     stamp = day.strftime("%d.%m.%Y")
-    weight = _num(Decimal(str(s.place_weight_kg)))
+    weight = _num(weight_kg)
     own_id = {"ИННФЛ": own.inn}
     receiver = {"ИННЮЛ": buyer.inn, "НаимОрг": buyer.full_name or buyer.name}
     if buyer.kpp:
@@ -482,6 +530,9 @@ def create_waybills(day: date, numbers: List[str], user: str) -> Dict:
                 orders.append(o)
         if not orders:
             return result
+        weights, unknown = cargo_weights(db, orders, s.bag_weight_kg)
+        if unknown:
+            result["notes"].append(f"Вес не определился, посчитан нулём: {', '.join(unknown)}")
         saby_sync.step("Вход в СБИС")
         sid = sc.login()
         first = sc.max_number(sid, sc.WAYBILL_TYPE) + 1
@@ -491,7 +542,8 @@ def create_waybills(day: date, numbers: List[str], user: str) -> Dict:
             saby_sync.step(f"Создаю ЭТрН {i + 1} из {len(orders)}", i + 1, len(orders))
             try:
                 file = sc.generate_attachment(sid, WAYBILL_ATTACH, WAYBILL_KND, FORMAT_VERSION,
-                                              waybill_payload(s, own, buyer, carrier, order, number, transport, day))
+                                              waybill_payload(s, own, buyer, carrier, order, number, transport, day,
+                                                              weights[order.order_no]))
                 document = {"Тип": sc.WAYBILL_TYPE, "Регламент": {"Название": WAYBILL_RULE},
                             "НашаОрганизация": {"СвЮЛ": {"ИНН": own.inn}}, "Вложение": [{"Файл": file}],
                             "ДокументОснование": [{"ВидСвязи": "Обычная связь",

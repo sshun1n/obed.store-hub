@@ -333,7 +333,8 @@ class SabySettings(Base):
     unload_time = Column(String(5), default="07:00")        # выгрузка в точках
     cargo_name = Column(String(150), default="Готовые обеды")
     cargo_state = Column(String(200), default="Упаковано в термосумку, целостность не нарушена")
-    place_weight_kg = Column(Float, default=3.5)
+    place_weight_kg = Column(Float, default=3.5)            # больше не используется: вес считается по позициям
+    bag_weight_kg = Column(Float, default=0.7)              # тара на точку: термосумка или контейнер
     place_volume_m3 = Column(Float, default=0.035)
     bag_length_cm = Column(Integer, default=43)
     bag_width_cm = Column(Integer, default=42)
