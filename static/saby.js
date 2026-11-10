@@ -134,9 +134,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const tr = d.our_transport;
         let step3;
         if (tr) {
-            const state = `№ ${esc(tr.number || '—')} ${chip(tr.state)} · ${esc(tr.party || 'перевозчик не указан')}`;
-            step3 = stepCard(3, 'Заказ на перевозку', state,
-                admin && tr.draft ? btn('transport-sign', 'Подписать', { primary: true }) : '', !tr.draft);
+            let state = `№ ${esc(tr.number || '—')} ${chip(tr.state)} · ${esc(tr.party || 'перевозчик не указан')}`;
+            if (tr.waiting) state += `<br><span class="saby-sub">Перевозчик ещё не подписал${tr.next_check_at ? ` · проверю ${timeText(tr.next_check_at).replace('сегодня ', '')}` : ''}</span>`;
+            const body3 = admin && tr.draft ? btn('transport-sign', 'Подписать', { primary: true })
+                : (tr.waiting ? btn('transport-check', 'Проверить') : '');
+            step3 = stepCard(3, 'Заказ на перевозку', state, body3, !tr.draft);
         } else {
             const options = d.carriers.map(c => `<option value="${c.id}"${c.id === (carrierId || d.last_carrier_id) ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
             step3 = stepCard(3, 'Заказ на перевозку', `Ещё не создан · точек в рейсе: ${t.length}, ${kg(t.reduce((a, p) => a + p.weight_kg, 0))}`,
@@ -148,25 +150,24 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // 4. ЭТрН
-        const signed = tr && tr.signed_by_carrier;
+        // ЭТрН можно делать, как только мы подписали заказ — подпись перевозчика не ждём
+        const ready = tr && !tr.draft;
         const drafts = new Set(d.draft_waybills);
         const toWaybill = t.filter(p => !p.waybill);
         const toSign = t.filter(p => drafts.has(p.order_no));
         let state4;
         if (!tr) state4 = 'После заказа на перевозку';
-        else if (!signed && tr.waiting) state4 = `Ждём подпись перевозчика${tr.next_check_at ? ` · проверю ${timeText(tr.next_check_at).replace('сегодня ', '')}` : ''}`;
-        else if (!signed) state4 = 'Заказ на перевозку ещё не отправлен перевозчику';
+        else if (!ready) state4 = 'После подписи заказа на перевозку';
         else state4 = `Создано ${s.waybills} из ${n}${drafts.size ? `, не подписано ${drafts.size}` : ''}${sel}`;
         let body4 = '';
-        if (tr && !signed && tr.waiting) body4 = btn('transport-check', 'Проверить');
-        else if (admin && signed) {
+        if (admin && ready) {
             body4 = [
                 btn('waybill-all', 'Создать и подписать', { primary: true, disabled: !toWaybill.length && !toSign.length }),
                 set.hide_split_waybills ? '' : btn('waybill-create', 'Создать', { disabled: !toWaybill.length }),
                 set.hide_split_waybills ? '' : btn('waybill-sign', 'Подписать', { disabled: !toSign.length, title: toSign.length ? '' : 'Нет неподписанных ЭТрН' }),
             ].join('');
         }
-        const step4 = stepCard(4, 'ЭТрН', state4, body4, s.waybills === n && !drafts.size, !signed);
+        const step4 = stepCard(4, 'ЭТрН', state4, body4, s.waybills === n && !drafts.size, !ready);
 
         return `<section class="saby-steps">${step1}${step2}${step3}${step4}</section>`;
     }

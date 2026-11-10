@@ -510,8 +510,12 @@ def create_waybills(day: date, numbers: List[str], user: str) -> Dict:
         transport = our_transport(db, day)
         if transport is None:
             raise ActionError("Сначала нужен заказ на перевозку: накладные ссылаются на его номер")
-        if transport.state not in sc.FINISHED:
-            raise ActionError("Перевозчик ещё не подписал заказ на перевозку")
+        # ЭТрН можно делать, как только мы подписали и отправили заказ: подпись
+        # перевозчика ждать не нужно (решение владельца 2026-11-10)
+        if transport.state == DRAFT:
+            raise ActionError("Сначала подпишите заказ на перевозку")
+        if transport.state in ("Удалён",) or "Отклон" in (transport.state or ""):
+            raise ActionError(f"Заказ на перевозку в состоянии «{transport.state}» — накладные к нему не делаю")
         carrier = db.query(database.Carrier).get(transport.carrier_id) if transport.carrier_id else None
         if carrier is None:
             carrier = next((c for c in db.query(database.Carrier).filter_by(is_active=True)
