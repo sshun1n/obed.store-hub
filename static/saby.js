@@ -276,7 +276,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (p.error) toast(p.error, 'error');
         else if (p.result) {
             const ok = (p.result.done || []).length, bad = Object.keys(p.result.errors || {}).length;
-            toast(`${p.label}: готово ${ok}${bad ? `, ошибок ${bad}` : ''}`, bad ? 'error' : 'ok');
+            const skip = (p.result.skipped || []).length;
+            toast(`${p.label}: готово ${ok}${skip ? `, пропущено ${skip} — уже были` : ''}${bad ? `, ошибок ${bad}` : ''}`, bad ? 'error' : 'ok');
         }
         setBusy(false);
         await load();
@@ -320,7 +321,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (!(await confirmCreate('реализации', create.length))) return;
                     if (!(await runTask({ action: 'create_shipments' }))) return;
                 } else if (name === 'ship-create') return;
-                if (name === 'ship-all') await runTask({ action: 'process_shipments' });
+                if (name === 'ship-all') {
+                    const drafts = targets().filter(p => p.shipment && /редактируется/i.test(p.shipment.state || '')).map(p => p.order_no);
+                    if (drafts.length) await runTask({ action: 'process_shipments', orders: drafts });
+                }
                 return;
             }
             if (name === 'ship-process') {

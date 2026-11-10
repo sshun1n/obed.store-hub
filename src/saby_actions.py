@@ -213,7 +213,7 @@ def _notices(db, sid: str, needed: set, day: date, buyer_inn: str) -> Tuple[str,
 def create_shipments(day: date, numbers: List[str], user: str) -> Dict:
     """Реализации черновиком, сразу заполненные: номер УПД из реестра, адрес, позиции."""
     db = database.SessionLocal()
-    result = {"done": [], "errors": {}, "notes": []}
+    result = {"done": [], "errors": {}, "notes": [], "skipped": []}
     try:
         orders = _orders(db, day, numbers)
         saby_sync.step("Вход в СБИС")
@@ -233,7 +233,7 @@ def create_shipments(day: date, numbers: List[str], user: str) -> Dict:
                 continue
             card = sc.read_card(sid, sc.DOCS_URL, item["Идентификатор"], sc.ORDER_TYPE)
             if sc.consequences(card, sc.SHIPMENT_TYPE):
-                result["errors"][label] = "реализация уже есть"
+                result["skipped"].append(label)   # реализация уже есть — делать нечего
                 continue
             order_xml = sc.xml_attachment(sid, card, "Заказ")
             if not order_xml:
@@ -279,7 +279,7 @@ def create_shipments(day: date, numbers: List[str], user: str) -> Dict:
 def process_shipments(day: date, numbers: List[str], user: str) -> Dict:
     """Провести: отправить реализацию и утвердить заказ. Подпись не нужна."""
     db = database.SessionLocal()
-    result = {"done": [], "errors": {}, "notes": []}
+    result = {"done": [], "errors": {}, "notes": [], "skipped": []}
     try:
         orders = _orders(db, day, numbers)
         saby_sync.step("Вход в СБИС")
@@ -299,9 +299,11 @@ def process_shipments(day: date, numbers: List[str], user: str) -> Dict:
                 shipment = _shipment_of(sid, card)
                 if shipment is None:
                     raise ActionError("реализации ещё нет — сначала «Создать»")
-                # Состояние — только что из списка: точку могли провести руками минуту назад
+                # Состояние — только что из списка: точку могли провести руками минуту назад.
+                # Проведённую не трогаем и ошибкой не считаем: при «все точки» это обычный случай
                 if sc.state(card) in sc.FINISHED or sc.state(shipment) != DRAFT:
-                    raise ActionError(f"уже проведена: реализация «{sc.state(shipment) or '—'}», заказ «{sc.state(card)}»")
+                    result["skipped"].append(label)
+                    continue
                 number = str(shipment.get("Номер") or "").strip()
                 note = str(shipment.get("Примечание") or "")
                 # Чужую реализацию не правим и не отправляем: только ту, где всё как мы создаём
@@ -503,7 +505,7 @@ def waybill_payload(s, own, buyer, carrier, order, number: str, transport: datab
 
 def create_waybills(day: date, numbers: List[str], user: str) -> Dict:
     db = database.SessionLocal()
-    result = {"done": [], "errors": {}, "notes": [], "doc_ids": []}
+    result = {"done": [], "errors": {}, "notes": [], "skipped": [], "doc_ids": []}
     try:
         transport = our_transport(db, day)
         if transport is None:
@@ -525,7 +527,7 @@ def create_waybills(day: date, numbers: List[str], user: str) -> Dict:
         orders = []
         for o in _orders(db, day, numbers):
             if o.order_no in have:
-                result["errors"][o.point.name] = "накладная уже есть"
+                result["skipped"].append(o.point.name)
             else:
                 orders.append(o)
         if not orders:
