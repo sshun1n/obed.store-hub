@@ -56,7 +56,7 @@ def _doc(row: Optional[database.SabyDoc]) -> Optional[Dict]:
     return {"id": row.saby_id, "number": row.number, "date": row.doc_date.isoformat() if row.doc_date else None,
             "state": row.state, "link": row.link, "amount": _money(row.amount),
             "accepted": "АктПриемки" in kinds, "upd_sent": "УпдСчфДоп" in kinds,
-            "checked_at": row.checked_at.isoformat(timespec="seconds") if row.checked_at else None}
+            "checked_at": _local(row.checked_at)}
 
 
 @router.get("/day")
@@ -118,7 +118,7 @@ def saby_day(day: date, db: Session = Depends(get_db), user=Depends(auth.get_cur
     return {
         "day": day.isoformat(), "label": format_range(day, day),
         "configured": saby_client.configured(),
-        "checked_at": checked.isoformat(timespec="seconds") if checked else None,
+        "checked_at": _local(checked),   # в базе UTC, показываем московское
         "points": points,
         "transport": transport,
         "loose_waybills": [{**_doc(d), "address": d.address, "order_no": d.order_no} for d in loose],
