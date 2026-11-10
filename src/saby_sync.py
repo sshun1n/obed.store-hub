@@ -250,3 +250,58 @@ def start(day: date, label: str = "Чтение СБИС", action: Optional[Call
 
 def step(text: str, done: Optional[int] = None, total: Optional[int] = None) -> None:
     _step(text, done, total)
+
+
+# --- Автообновление по расписанию ---
+
+AUTO_BACK_DAYS = 2    # вчерашние и позавчерашние поставки: Лавка принимает товар, приходят акты
+AUTO_AHEAD_DAYS = 3   # ближайшие поставки: по ним сейчас и идёт работа с документами
+
+
+def auto_days(db) -> list:
+    """Дни поставки с нашими заказами вокруг сегодняшнего — их и обновляем."""
+    today = sheet_sync.local_now().date()
+    rows = (db.query(database.LavkaOrder.delivery_date)
+            .filter(database.LavkaOrder.delivery_date.between(today - timedelta(days=AUTO_BACK_DAYS),
+                                                              today + timedelta(days=AUTO_AHEAD_DAYS)))
+            .distinct().all())
+    return sorted(d for (d,) in rows)
+
+
+def _auto_worker(days: list) -> None:
+    done, failed = [], {}
+    try:
+        with _lock:
+            for i, day in enumerate(days, start=1):
+                _progress["day"] = day.isoformat()
+                _step(f"Обновляю {day.strftime('%d.%m')} ({i} из {len(days)})", i, len(days))
+                try:
+                    refresh_day(day)
+                    done.append(day.strftime("%d.%m"))
+                except sc.SabyError as exc:
+                    failed[day.strftime("%d.%m")] = str(exc)
+                except Exception as exc:
+                    logger.error(f"Автообновление СБИС за {day}: {exc}", exc_info=True)
+                    failed[day.strftime("%d.%m")] = f"сбой: {exc}"
+        _progress["error"] = "; ".join(f"{k}: {v}" for k, v in failed.items()) or None
+    finally:
+        text = f"обновлено: {', '.join(done) or 'ничего'}" + (f"; ошибки: {len(failed)}" if failed else "")
+        db = database.SessionLocal()
+        try:
+            row = db.query(database.SabySettings).first()
+            if row is not None:
+                row.sync_last_result = text[:300]
+                db.commit()
+        finally:
+            db.close()
+        _progress["running"] = False
+        _progress["finished_at"] = sheet_sync.local_now().isoformat(timespec="seconds")
+
+
+def start_auto(days: list) -> bool:
+    if not days or _progress["running"]:
+        return False
+    _progress.update(running=True, day=days[0].isoformat(), label="Автообновление", step="Начинаю",
+                     done=0, total=len(days), error=None, result=None)
+    threading.Thread(target=_auto_worker, args=(days,), name="saby-auto", daemon=True).start()
+    return True

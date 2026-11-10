@@ -654,6 +654,48 @@ def poll_due() -> None:
             logger.warning(f"Проверка подписи перевозчика не удалась: {exc}")
 
 
+def sync_schedule(s: database.SabySettings):
+    """Расписание автообновления в том виде, который понимает sheet_sync.is_due."""
+    from types import SimpleNamespace
+    return SimpleNamespace(enabled=bool(s.sync_enabled), weekdays=s.sync_weekdays or "0,1,2,3,4,5,6",
+                           start_time=s.sync_start_time or "07:00", end_time=s.sync_end_time or "21:00",
+                           interval_minutes=s.sync_interval_minutes or 30)
+
+
+def sync_summary(s: database.SabySettings) -> str:
+    plan = sync_schedule(s)
+    if not plan.enabled:
+        return "выключено"
+    days = sheet_sync._weekdays(plan)
+    return (f"{sheet_sync._weekdays_text(days)}, {sheet_sync._interval_text(plan.interval_minutes)}, "
+            f"{plan.start_time}–{plan.end_time}")
+
+
+def auto_sync_due() -> None:
+    """Подошёл срок по расписанию — перечитать ближайшие дни поставки.
+
+    Срок отмечаем до запуска: если СБИС недоступен, следующая попытка будет в свой
+    срок, а не каждую минуту. Если идёт ручная операция, срок не отмечаем и ждём её.
+    """
+    if not sc.configured() or saby_sync.progress()["running"]:
+        return
+    db = database.SessionLocal()
+    try:
+        s = get_settings(db)
+        now = sheet_sync.local_now()
+        if not sheet_sync.is_due(sync_schedule(s), s.sync_last_at, now):
+            return
+        days = saby_sync.auto_days(db)
+        s.sync_last_at = now
+        if not days:
+            s.sync_last_result = "ближайших поставок нет"
+        db.commit()
+    finally:
+        db.close()
+    if days:
+        saby_sync.start_auto(days)
+
+
 _poller_started = False
 
 
@@ -667,6 +709,10 @@ def start_poller() -> None:
 
     def loop():
         while True:
+            try:
+                auto_sync_due()
+            except Exception as exc:
+                logger.error(f"Ошибка автообновления СБИС: {exc}", exc_info=True)
             try:
                 poll_due()
             except Exception as exc:

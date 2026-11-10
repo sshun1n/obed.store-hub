@@ -319,6 +319,14 @@ class SabySettings(Base):
     hide_split_transport = Column(Boolean, default=False)
     hide_split_waybills = Column(Boolean, default=False)
     poll_minutes = Column(Integer, default=20)              # проверка подписи перевозчика
+    # Автообновление страницы из кабинета: те же поля расписания, что у почты и таблицы
+    sync_enabled = Column(Boolean, default=True)
+    sync_interval_minutes = Column(Integer, default=30)
+    sync_start_time = Column(String(5), default="07:00")
+    sync_end_time = Column(String(5), default="21:00")
+    sync_weekdays = Column(String(20), default="0,1,2,3,4,5,6")
+    sync_last_at = Column(DateTime, nullable=True)          # местное время последнего запуска
+    sync_last_result = Column(String(300), nullable=True)
     pickup_address = Column(String(300), default="Нижний Новгород, Агрономическая улица, д. 89")
     pickup_time = Column(String(5), default="06:30")        # подача машины
     departure_time = Column(String(5), default="06:45")     # убытие с погрузки

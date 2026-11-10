@@ -237,7 +237,11 @@ document.addEventListener('DOMContentLoaded', () => {
             data = await api(`/api/v1/saby/day?day=${day()}`);
             if (selecting) selected = new Set([...selected].filter(o => data.points.some(p => p.order_no === o)));
             render();
-            if (!polling) stateEl.textContent = data.checked_at ? `Прочитано ${timeText(data.checked_at)}` : '';
+            if (!polling) {
+                const auto = data.settings.sync_summary;
+                stateEl.textContent = [data.checked_at ? `Прочитано ${timeText(data.checked_at)}` : '',
+                    auto && auto !== 'выключено' ? `само: ${auto}` : ''].filter(Boolean).join(' · ');
+            }
         } catch (err) {
             content.innerHTML = `<div class="empty-state">${esc(err.message)}</div>`;
         }
@@ -419,6 +423,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const settingsModal = el('settingsModal');
     const form = el('settingsForm');
+    const syncDays = el('syncDays');
+    syncDays.innerHTML = Hub.WEEKDAYS.map((name, day) =>
+        `<button type="button" class="wd-btn${day >= 5 ? ' wd-wknd' : ''}" data-day="${day}" aria-pressed="false">${name}</button>`).join('');
+    const setSyncDays = (days) => syncDays.querySelectorAll('.wd-btn').forEach((b) => {
+        const on = days.includes(Number(b.dataset.day));
+        b.classList.toggle('on', on);
+        b.setAttribute('aria-pressed', on);
+    });
+    syncDays.addEventListener('click', (e) => {
+        const b = e.target.closest('.wd-btn');
+        if (!b) return;
+        b.classList.toggle('on');
+        b.setAttribute('aria-pressed', b.classList.contains('on'));
+    });
+    el('syncPresets').addEventListener('click', (e) => {
+        const chip = e.target.closest('[data-days]');
+        if (chip) setSyncDays(chip.dataset.days.split(',').map(Number));
+    });
+    // Выключено — поля расписания приглушены, но значения остаются
+    const syncToggle = () => el('syncFields').classList.toggle('is-off', !el('syncEnabled').checked);
+    el('syncEnabled').addEventListener('change', syncToggle);
     el('settingsBtn').addEventListener('click', async () => {
         el('settingsError').textContent = '';
         try {
@@ -428,6 +453,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!input) continue;
                 if (input.type === 'checkbox') input.checked = !!v; else input.value = v ?? '';
             }
+            const interval = form.elements.sync_interval_minutes;
+            if (![...interval.options].some(o => o.value === String(s.sync_interval_minutes))) {
+                interval.add(new Option(`${s.sync_interval_minutes} минут`, s.sync_interval_minutes));
+                interval.value = String(s.sync_interval_minutes);
+            }
+            setSyncDays(s.sync_weekdays || []);
+            syncToggle();
+            el('syncHint').textContent = 'Приложение само перечитывает кабинет за ближайшие дни поставки: от позавчера до трёх дней вперёд. Время московское.'
+                + (s.sync_last_at ? ` Последний раз: ${timeText(s.sync_last_at)}${s.sync_last_result ? `, ${s.sync_last_result}` : ''}.` : '');
             Hub.openModal(settingsModal);
         } catch (err) { toast(err.message, 'error'); }
     });
@@ -437,8 +471,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const body = {};
         for (const input of form.elements) {
             if (!input.name) continue;
-            body[input.name] = input.type === 'checkbox' ? input.checked : input.type === 'number' ? Number(input.value) : input.value;
+            body[input.name] = input.type === 'checkbox' ? input.checked
+                : (input.type === 'number' || input.name === 'sync_interval_minutes') ? Number(input.value) : input.value;
         }
+        body.sync_weekdays = [...syncDays.querySelectorAll('.wd-btn.on')].map(b => Number(b.dataset.day));
+        if (body.sync_enabled && !body.sync_weekdays.length) { el('settingsError').textContent = 'Выберите хотя бы один день автообновления'; return; }
         try {
             await api('/api/v1/saby/settings', { method: 'PUT', body });
             Hub.closeModal(settingsModal);

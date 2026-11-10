@@ -126,7 +126,9 @@ def saby_day(day: date, db: Session = Depends(get_db), user=Depends(auth.get_cur
         "settings": {"hide_split_shipments": bool(settings.hide_split_shipments),
                      "hide_split_transport": bool(settings.hide_split_transport),
                      "hide_split_waybills": bool(settings.hide_split_waybills),
-                     "poll_minutes": settings.poll_minutes or 20},
+                     "poll_minutes": settings.poll_minutes or 20,
+                     "sync_summary": saby_actions.sync_summary(settings),
+                     "sync_last_at": settings.sync_last_at.isoformat(timespec="minutes") if settings.sync_last_at else None},
         "carriers": carriers,
         "last_carrier_id": settings.last_carrier_id,
         "our_transport": None if ours_transport is None else {
@@ -172,6 +174,11 @@ async def saby_registry(file: UploadFile = File(...), db: Session = Depends(get_
 # --- Настройки ---
 
 class SettingsIn(BaseModel):
+    sync_enabled: bool = True
+    sync_interval_minutes: int = Field(30, ge=10, le=240)
+    sync_start_time: str = Field("07:00", pattern=r"^\d{2}:\d{2}$")
+    sync_end_time: str = Field("21:00", pattern=r"^\d{2}:\d{2}$")
+    sync_weekdays: List[int] = [0, 1, 2, 3, 4, 5, 6]
     hide_split_shipments: bool = False
     hide_split_transport: bool = False
     hide_split_waybills: bool = False
@@ -200,15 +207,26 @@ class SettingsIn(BaseModel):
 @router.get("/settings")
 def saby_settings_get(db: Session = Depends(get_db), admin=Depends(auth.admin_only)):
     row = saby_actions.get_settings(db)
-    return {key: getattr(row, key) for key in SettingsIn.model_fields}
+    out = {key: getattr(row, key) for key in SettingsIn.model_fields}
+    out["sync_weekdays"] = [int(x) for x in (row.sync_weekdays or "0,1,2,3,4,5,6").split(",") if x != ""]
+    out["sync_last_at"] = row.sync_last_at.isoformat(timespec="minutes") if row.sync_last_at else None
+    out["sync_last_result"] = row.sync_last_result
+    return out
 
 
 @router.put("/settings")
 def saby_settings_put(data: SettingsIn, db: Session = Depends(get_db), admin=Depends(auth.admin_only)):
     if data.temp_min > data.temp_max:
         raise HTTPException(status_code=400, detail="Нижняя граница температуры выше верхней")
+    days = sorted({d for d in data.sync_weekdays if 0 <= d <= 6})
+    if data.sync_enabled and not days:
+        raise HTTPException(status_code=400, detail="Выберите хотя бы один день автообновления")
+    if data.sync_start_time >= data.sync_end_time:
+        raise HTTPException(status_code=400, detail="Время «с» должно быть раньше времени «до»")
     row = saby_actions.get_settings(db)
     for key, value in data.model_dump().items():
+        if key == "sync_weekdays":
+            value = ",".join(str(d) for d in days) or "0,1,2,3,4,5,6"
         setattr(row, key, value.strip() if isinstance(value, str) else value)
     db.commit()
     return {"ok": True}

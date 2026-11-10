@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=1.19.3">
+    <link rel="stylesheet" href="/static/style.css?v=1.20.0">
     <link rel="expect" href="#hubEnd" blocking="render">
 </head>
 <body>
@@ -57,6 +57,32 @@
                 <button type="button" class="icon-btn" data-close aria-label="Закрыть">&times;</button>
             </header>
             <form id="settingsForm" class="saby-settings-form">
+                <section>
+                    <label class="saby-toggle"><span><b>Автообновление из СБИС</b></span><span class="switch"><input type="checkbox" name="sync_enabled" id="syncEnabled"><span class="switch-track"></span></span></label>
+                    <div class="saby-sync" id="syncFields">
+                        <div class="form-group">
+                            <span class="saby-label">Дни</span>
+                            <div class="wd-toggles" id="syncDays"></div>
+                            <div class="quick-dates" id="syncPresets">
+                                <button type="button" class="chip" data-days="0,1,2,3,4">Будни</button>
+                                <button type="button" class="chip" data-days="1,3,5">Дни поставок</button>
+                                <button type="button" class="chip" data-days="0,1,2,3,4,5,6">Все дни</button>
+                            </div>
+                        </div>
+                        <div class="saby-grid">
+                            <label class="form-group"><span>Интервал</span>
+                                <select class="styled-text-input" name="sync_interval_minutes">
+                                    <option value="15">15 минут</option>
+                                    <option value="30">30 минут</option>
+                                    <option value="60">1 час</option>
+                                    <option value="120">2 часа</option>
+                                </select></label>
+                            <label class="form-group"><span>С</span><input class="styled-text-input" type="time" name="sync_start_time" required></label>
+                            <label class="form-group"><span>До</span><input class="styled-text-input" type="time" name="sync_end_time" required></label>
+                        </div>
+                    </div>
+                    <p class="field-hint" id="syncHint">Приложение само перечитывает кабинет за ближайшие дни поставки: от позавчера до трёх дней вперёд. Время московское.</p>
+                </section>
                 <section>
                     <h3>Кнопки</h3>
                     <p class="field-hint">Рядом с «Создать и провести» есть кнопки для отдельных шагов. Их можно спрятать.</p>
@@ -131,7 +157,7 @@
     <script src="/static/hub-ui.js?v=1.10.0"></script>
     <script src="/static/period-picker.js?v=1.19.0"></script>
     <script src="/static/saby-sign.js?v=1.19.0"></script>
-    <script src="/static/saby.js?v=1.19.1"></script>
+    <script src="/static/saby.js?v=1.20.0"></script>
     <div id="hubEnd" hidden></div>
 </body>
 </html>
