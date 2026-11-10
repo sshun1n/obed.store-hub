@@ -2112,7 +2112,7 @@ a.saby-doc:hover, a.saby-doc:hover span { color: var(--red); }
 .saby-step-state { margin: 0; font-size: 0.8rem; color: var(--ink-soft); line-height: 1.45; }
 .saby-step-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 4px; }
 .saby-step-actions .btn-sm { padding: 6px 11px; }
-.saby-carrier { width: 100%; min-width: 0; height: 34px; padding-top: 0; padding-bottom: 0; font-size: 0.82rem; }
+select.styled-text-input.saby-carrier { width: 100%; min-width: 0; height: 36px; padding: 0 30px 0 11px; font-size: 0.84rem; line-height: 34px; }
 .saby-busy .saby-steps, .saby-busy .saby-table { opacity: 0.6; pointer-events: none; transition: opacity 0.2s; }
 
 /* Шапка таблицы и кнопка режима выбора — маленький акцент */
