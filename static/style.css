@@ -2184,3 +2184,39 @@ select.styled-text-input.saby-carrier { width: 100%; min-width: 0; height: 36px;
 .saby-sync.is-off { opacity: 0.45; }
 .saby-label { font-size: 0.74rem; color: var(--muted); }
 #syncPresets { margin-top: 6px; }
+
+/* ===== Выбор времени (time-picker.js): 24 часа, сетка часов и минут ===== */
+.tp-wrap { position: relative; display: block; width: 100%; }
+.tp-wrap .tp-input { width: 100%; min-width: 0; padding-right: 36px; font-family: var(--mono); font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+.tp-icon {
+    position: absolute; top: 50%; right: 6px; transform: translateY(-50%);
+    display: grid; place-items: center; width: 26px; height: 26px; padding: 0;
+    color: var(--muted); background: none; border: none; border-radius: 6px; cursor: pointer;
+    transition: color 0.12s, background 0.12s;
+}
+.tp-icon svg { display: block; width: 16px; height: 16px; }
+.tp-icon:hover, .tp-active .tp-icon { color: var(--ink); background: var(--paper); }
+.tp-active .tp-input { border-color: var(--ink); }
+
+.tp-pop {
+    position: fixed; z-index: 3200; display: flex; gap: 14px; padding: 12px;
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: 0 12px 40px rgba(23, 23, 26, 0.16), 0 2px 6px rgba(23, 23, 26, 0.06);
+    opacity: 0; transform: translateY(-4px); transition: opacity 0.14s ease, transform 0.14s ease;
+}
+.tp-pop.open { opacity: 1; transform: none; }
+.tp-pop[hidden] { display: none; }
+.tp-col { display: flex; flex-direction: column; gap: 6px; }
+.tp-col + .tp-col { padding-left: 14px; border-left: 1px solid var(--line); }
+.tp-caption { font-family: var(--mono); font-size: 0.6rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+.tp-grid { display: grid; gap: 3px; }
+.tp-hours { grid-template-columns: repeat(6, 34px); }
+.tp-minutes { grid-template-columns: repeat(3, 34px); }
+.tp-cell {
+    height: 30px; padding: 0; border: none; border-radius: 6px; background: none;
+    font-family: var(--mono); font-size: 0.8rem; font-variant-numeric: tabular-nums; color: var(--ink-soft); cursor: pointer;
+    transition: background 0.1s, color 0.1s;
+}
+.tp-cell:hover { background: var(--paper); color: var(--ink); }
+.tp-cell.on { background: var(--ink); color: #fff; }
+@media (prefers-reduced-motion: reduce) { .tp-pop { transition: none; } }

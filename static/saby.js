@@ -237,11 +237,7 @@ document.addEventListener('DOMContentLoaded', () => {
             data = await api(`/api/v1/saby/day?day=${day()}`);
             if (selecting) selected = new Set([...selected].filter(o => data.points.some(p => p.order_no === o)));
             render();
-            if (!polling) {
-                const auto = data.settings.sync_summary;
-                stateEl.textContent = [data.checked_at ? `Прочитано ${timeText(data.checked_at)}` : '',
-                    auto && auto !== 'выключено' ? `само: ${auto}` : ''].filter(Boolean).join(' · ');
-            }
+            if (!polling) stateEl.textContent = data.checked_at ? `Прочитано ${timeText(data.checked_at)}` : '';
         } catch (err) {
             content.innerHTML = `<div class="empty-state">${esc(err.message)}</div>`;
         }
