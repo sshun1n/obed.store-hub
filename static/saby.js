@@ -64,13 +64,13 @@ document.addEventListener('DOMContentLoaded', () => {
     function regMark(p) {
         const r = p.registry;
         if (!r) return data.registry_rows
-            ? '<span class="st st-muted saby-reg" title="В загруженном реестре 1С нет строки для этой точки — реализацию не создать">нет в 1С</span>'
+            ? '<span class="saby-reg saby-reg-none" title="В загруженном реестре 1С нет строки для этой точки — реализацию не создать">нет в реестре 1С</span>'
             : '';
         const why = [!r.sum_ok ? `сумма в 1С ${fmtMoney(r.amount)}, у нас ${fmtMoney(p.gross)}` : '',
             r.number_ok === false ? `в 1С № ${r.number}` : ''].filter(Boolean).join('; ');
-        if (why) return `<span class="st st-bad saby-reg" title="${esc(why)}">1С: ${esc(why)}</span>`;
+        if (why) return `<span class="saby-reg saby-reg-bad" title="${esc(why)}">1С: ${esc(why)}</span>`;
         const ok = p.shipment ? 'Номер и сумма сходятся с реестром 1С' : `Строка реестра 1С № ${r.number} найдена по адресу, сумма сходится`;
-        return `<span class="st st-ok saby-reg" title="${esc(ok)}">1С ✓${p.shipment ? '' : ` № ${esc(r.number)}`}</span>`;
+        return `<span class="saby-reg saby-reg-ok" title="${esc(ok)}">✓ ${p.shipment ? 'сходится с 1С' : `в 1С № ${esc(r.number)}`}</span>`;
     }
 
     // Заказ и реализация — одной ячейкой: номер реализации, ссылка ведёт на заказ
@@ -78,7 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const order = p.order, ship = p.shipment;
         if (!order && !ship) return '<span class="saby-none">нет в СБИС</span>';
         const reg = regMark(p);
-        if (!ship) return `${link(order && order.link, 'Заказ')} ${chip(order && order.state)}<div class="saby-sub">реализации нет${reg ? ` ${reg}` : ''}</div>`;
+        if (!ship) return `${link(order && order.link, 'Заказ')} ${chip(order && order.state)}<div class="saby-sub">реализации нет${reg ? ` · ${reg}` : ''}</div>`;
         return `${link(order ? order.link : ship.link, `№ ${esc(ship.number || '—')}`)} ${chip(ship.state)}${reg ? `<div class="saby-sub">${reg}</div>` : ''}`;
     }
     function waybillCell(w) {
