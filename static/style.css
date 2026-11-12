@@ -2097,8 +2097,8 @@ a.saby-doc span { margin-left: 3px; font-size: 0.72rem; color: var(--muted); tra
 a.saby-doc:hover, a.saby-doc:hover span { color: var(--red); }
 .saby-sub { margin-top: 3px; font-size: 0.74rem; color: var(--muted); }
 .saby-none { font-size: 0.8rem; color: var(--muted); }
-.saby-reg { font-family: var(--mono); font-size: 0.66rem; color: var(--muted); }
-.saby-reg-bad { color: #8C2317; }
+.saby-reg { max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-size: 0.6rem; margin-left: 2px; }
+.saby-sub > .saby-reg:first-child { margin-left: 0; }
 
 /* Шаги */
 .saby-steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 22px; }

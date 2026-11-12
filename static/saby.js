@@ -60,20 +60,25 @@ document.addEventListener('DOMContentLoaded', () => {
         ? `<a class="saby-doc" href="${esc(href)}" target="_blank" rel="noopener" title="Открыть в кабинете">${text}<span aria-hidden="true">↗</span></a>`
         : `<span class="saby-doc">${text}</span>`;
 
+    // Сверка с реестром 1С: метка видна и до создания реализации — строка уже нашлась по адресу
+    function regMark(p) {
+        const r = p.registry;
+        if (!r) return data.registry_rows
+            ? '<span class="st st-muted saby-reg" title="В загруженном реестре 1С нет строки для этой точки — реализацию не создать">нет в 1С</span>'
+            : '';
+        const why = [!r.sum_ok ? `сумма в 1С ${fmtMoney(r.amount)}, у нас ${fmtMoney(p.gross)}` : '',
+            r.number_ok === false ? `в 1С № ${r.number}` : ''].filter(Boolean).join('; ');
+        if (why) return `<span class="st st-bad saby-reg" title="${esc(why)}">1С: ${esc(why)}</span>`;
+        const ok = p.shipment ? 'Номер и сумма сходятся с реестром 1С' : `Строка реестра 1С № ${r.number} найдена по адресу, сумма сходится`;
+        return `<span class="st st-ok saby-reg" title="${esc(ok)}">1С ✓${p.shipment ? '' : ` № ${esc(r.number)}`}</span>`;
+    }
+
     // Заказ и реализация — одной ячейкой: номер реализации, ссылка ведёт на заказ
     function shipmentCell(p) {
         const order = p.order, ship = p.shipment;
         if (!order && !ship) return '<span class="saby-none">нет в СБИС</span>';
-        if (!ship) return `${link(order && order.link, 'Заказ')} ${chip(order && order.state)}<div class="saby-sub">реализации нет</div>`;
-        const r = p.registry;
-        let reg = '';
-        if (r) {
-            const bad = !r.sum_ok || r.number_ok === false;
-            const why = [!r.sum_ok ? `сумма в 1С ${fmtMoney(r.amount)}, у нас ${fmtMoney(p.gross)}` : '',
-                r.number_ok === false ? `в 1С № ${r.number}` : ''].filter(Boolean).join('; ');
-            reg = bad ? `<span class="saby-reg saby-reg-bad" title="${esc(why)}">1С: ${esc(why)}</span>`
-                : '<span class="saby-reg" title="Номер и сумма сходятся с реестром 1С">1С ✓</span>';
-        }
+        const reg = regMark(p);
+        if (!ship) return `${link(order && order.link, 'Заказ')} ${chip(order && order.state)}<div class="saby-sub">реализации нет${reg ? ` ${reg}` : ''}</div>`;
         return `${link(order ? order.link : ship.link, `№ ${esc(ship.number || '—')}`)} ${chip(ship.state)}${reg ? `<div class="saby-sub">${reg}</div>` : ''}`;
     }
     function waybillCell(w) {
