@@ -4,7 +4,7 @@
  * браузер: сервер готовит документы, браузер подписывает файлы, сервер отправляет подписи.
  * Плагин работает только на https:// и localhost.
  *
- *   await SabySign.sign({ day, kind: 'transport' | 'waybill', orders: [...], title })  // true — отправлено
+ *   await SabySign.sign({ day, kind: 'transport' | 'waybill' | 'upd', orders: [...], title })  // true — отправлено
  */
 window.SabySign = (() => {
     const REMEMBER = 'obed.sign.thumbprint';

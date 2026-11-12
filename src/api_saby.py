@@ -5,7 +5,7 @@
 /sign/prepare и /sign/send (подпись в браузере), /check-transport.
 Читать могут все, менять — только админ.
 """
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Dict, List, Optional
 
@@ -102,8 +102,6 @@ def saby_day(day: date, db: Session = Depends(get_db), user=Depends(auth.get_cur
             "registry": reg,
         })
 
-    ours = {o.order_no for o in orders}
-    loose = [d for d in docs if d.kind == "waybill" and d.ours and (d.order_no or "") not in ours]
     transport = [{**_doc(d), "party": d.party, "cargo": d.cargo,
                   "waybills": sum(1 for w in docs if w.kind == "waybill" and w.parent_id == d.saby_id)}
                  for d in docs if d.kind == "transport" and d.ours]
@@ -121,7 +119,6 @@ def saby_day(day: date, db: Session = Depends(get_db), user=Depends(auth.get_cur
         "checked_at": _local(checked),   # в базе UTC, показываем московское
         "points": points,
         "transport": transport,
-        "loose_waybills": [{**_doc(d), "address": d.address, "order_no": d.order_no} for d in loose],
         "registry_free": [{"number": r.number, "amount": _money(r.amount), "address": r.address} for r in free],
         "registry_rows": len(registry),
         "is_admin": getattr(user, "role", "") == "admin",
@@ -142,6 +139,9 @@ def saby_day(day: date, db: Session = Depends(get_db), user=Depends(auth.get_cur
             "next_check_at": _local(ours_transport.next_check_at) if waiting else None,
         },
         "draft_waybills": draft_waybills,
+        "upd_ready": [d.order_no for d in docs if d.kind == "shipment" and d.ours and d.order_no
+                      and saby_actions.upd_ready(d)],
+        "upd_deadline": (day + timedelta(days=saby_actions.UPD_DEADLINE_DAYS)).isoformat(),
         "weight_kg": float(sum(weights.values())),
         "unknown_weight": unknown_weight,
         "stats": {
@@ -278,7 +278,7 @@ def saby_action(data: ActionIn, admin=Depends(auth.admin_only)):
 
 class SignPrepareIn(BaseModel):
     day: date
-    kind: str                          # transport | waybill
+    kind: str                          # transport | waybill | upd
     orders: List[str] = []
     thumbprint: str = Field(..., min_length=20, max_length=80)
 

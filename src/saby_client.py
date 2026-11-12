@@ -229,13 +229,18 @@ def pending_action(card: dict, preferred: tuple) -> tuple:
     raise SabyError("не понял, какой шаг подписывать: " + ", ".join(f"«{a}: {b}»" for a, b in options))
 
 
-def prepare_sign(sid: str, url: str, doc_id: str, kind: str, thumbprint: str, preferred: tuple) -> dict:
+def prepare_sign(sid: str, url: str, doc_id: str, kind: str, thumbprint: str, preferred: tuple,
+                 fixed: Optional[tuple] = None) -> dict:
     """Готовит документ к подписи в браузере и отдаёт файлы, которые надо подписать.
 
-    Только для документов TMS: реализации в ЭДО подписью тут не отправляются.
+    fixed — этап и действие, известные заранее (УПД по реализации). Тогда карточку
+    не читаем вовсе: открывать незавершённую реализацию нельзя (см. read_card).
     """
-    card = read_card(sid, url, doc_id, kind)
-    stage, action = pending_action(card, preferred)
+    if fixed:
+        stage, action = fixed
+    else:
+        card = read_card(sid, url, doc_id, kind)
+        stage, action = pending_action(card, preferred)
     prepared = _post(url, "СБИС.ПодготовитьДействие", {"Документ": {"Идентификатор": doc_id, "Этап": {
         "Название": stage, "Действие": {"Название": action, "Сертификат": {"Отпечаток": thumbprint}}}}}, sid) or {}
     files = []

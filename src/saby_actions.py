@@ -584,11 +584,33 @@ def create_waybills(day: date, numbers: List[str], user: str) -> Dict:
 
 SIGN_TTL = timedelta(minutes=15)
 _SIGNING: Dict[str, dict] = {}
-KINDS = {"transport": (sc.TRANSPORT_TYPE, ORDER_ACTIONS), "waybill": (sc.WAYBILL_TYPE, WAYBILL_ACTIONS)}
+# УПД уходит шагом «Отправка» реализации — по истории завершённых реализаций, как в ka-webapp
+UPD_STEP = ("Отправка", "Отправить")
+UPD_DEADLINE_DAYS = 5     # на отправку УПД после отгрузки — пять дней
+# вид → (тип документа, предпочтительные переходы, адрес сервиса, заранее известный шаг)
+KINDS = {"transport": (sc.TRANSPORT_TYPE, ORDER_ACTIONS, sc.TMS_URL, None),
+         "waybill": (sc.WAYBILL_TYPE, WAYBILL_ACTIONS, sc.TMS_URL, None),
+         "upd": (sc.SHIPMENT_TYPE, (), sc.DOCS_URL, UPD_STEP)}
+
+
+def upd_ready(doc: database.SabyDoc) -> bool:
+    """Реализация ждёт УПД: Лавка прислала акт приёмки, а УПД ещё не уходил.
+
+    Признак — вложения из списка, не состояние: при расхождениях по приёмке СБИС
+    пишет «Состояние не определено», а УПД по таким тоже отправляют.
+    """
+    kinds = set((doc.attachments or "").split(","))
+    return doc.state != "Удалён" and "АктПриемки" in kinds and "УпдСчфДоп" not in kinds
 
 
 def sign_targets(db, day: date, kind: str, numbers: List[str]) -> List[database.SabyDoc]:
-    """Что подписывать: наши черновики нужного вида за день (по выбранным точкам для ЭТрН)."""
+    """Что подписывать: наши черновики нужного вида за день (по выбранным точкам для ЭТрН),
+    для УПД — наши реализации с актом приёмки и без отправленного УПД."""
+    if kind == "upd":
+        docs = [d for d in db.query(database.SabyDoc).filter(
+            database.SabyDoc.delivery_date == day, database.SabyDoc.kind == "shipment",
+            database.SabyDoc.ours.is_(True)) if upd_ready(d)]
+        return [d for d in docs if d.order_no in set(numbers)] if numbers else docs
     query = db.query(database.SabyDoc).filter(database.SabyDoc.delivery_date == day, database.SabyDoc.kind == kind,
                                               database.SabyDoc.ours.is_(True), database.SabyDoc.state == DRAFT)
     docs = query.all()
@@ -600,20 +622,34 @@ def sign_targets(db, day: date, kind: str, numbers: List[str]) -> List[database.
 def prepare_signing(day: date, kind: str, numbers: List[str], thumbprint: str) -> Dict:
     if kind not in KINDS:
         raise ActionError("Неизвестный вид документа")
-    doc_type, preferred = KINDS[kind]
+    doc_type, preferred, url, fixed = KINDS[kind]
     db = database.SessionLocal()
     try:
         targets = sign_targets(db, day, kind, numbers)
         if not targets:
-            raise ActionError("Подписывать нечего: черновиков нет — сначала «Создать»")
+            raise ActionError("УПД отправлять нечего: нет реализаций с актом приёмки — обновите из СБИС"
+                              if kind == "upd" else "Подписывать нечего: черновиков нет — сначала «Создать»")
         ids = {d.saby_id: (d.number, d.order_no) for d in targets}
     finally:
         db.close()
     sid = sc.login()
     documents, skipped = [], {}
+    if kind == "upd":
+        # Перепроверяем по свежему списку: подписываем только то, что и сейчас ждёт УПД,
+        # а не ушедшее минуту назад руками. Реализации не открываем — только список
+        fresh = {i["Идентификатор"]: i for i in sc.list_documents(sid, sc.DOCS_URL, sc.SHIPMENT_TYPE, start=day, end=day)}
+        for saby_id, (number, _) in list(ids.items()):
+            item = fresh.get(saby_id)
+            if item is None and number:
+                item = next((c for c in sc.list_documents(sid, sc.DOCS_URL, sc.SHIPMENT_TYPE, mask=number, pages=1)
+                             if c["Идентификатор"] == saby_id), None)
+            kinds = set(sc.attachments(item or {}))
+            if item is None or item.get("Удален") == "Да" or "УпдСчфДоп" in kinds or "АктПриемки" not in kinds:
+                skipped[f"№ {number}"] = "уже не ждёт УПД — обновите из СБИС"
+                ids.pop(saby_id)
     for saby_id, (number, _) in ids.items():
         try:
-            documents.append(sc.prepare_sign(sid, sc.TMS_URL, saby_id, doc_type, thumbprint, preferred))
+            documents.append(sc.prepare_sign(sid, url, saby_id, doc_type, thumbprint, preferred, fixed))
         except sc.SabyError as exc:
             skipped[f"№ {number}"] = str(exc)
     if not documents:
@@ -622,7 +658,7 @@ def prepare_signing(day: date, kind: str, numbers: List[str], thumbprint: str) -
     for token in [t for t, v in _SIGNING.items() if now - v["at"] > SIGN_TTL]:
         _SIGNING.pop(token, None)
     token = secrets.token_urlsafe(16)
-    _SIGNING[token] = {"at": now, "sid": sid, "thumbprint": thumbprint, "day": day, "kind": kind,
+    _SIGNING[token] = {"at": now, "sid": sid, "thumbprint": thumbprint, "day": day, "kind": kind, "url": url,
                        "docs": {d["id"]: {"stage": d["stage"], "action": d["action"],
                                           "files": {f["id"] for f in d["files"]}} for d in documents}}
     return {"token": token, "documents": [{"id": d["id"], "files": d["files"]} for d in documents], "skipped": skipped}
@@ -638,7 +674,7 @@ def send_signing(token: str, signatures: Dict[str, str]) -> Dict:
             errors[doc_id] = "подписаны не все файлы документа"
             continue
         try:
-            sc.send_signed(item["sid"], sc.TMS_URL, doc_id, doc["stage"], doc["action"], item["thumbprint"],
+            sc.send_signed(item["sid"], item["url"], doc_id, doc["stage"], doc["action"], item["thumbprint"],
                            {fid: signatures[fid] for fid in doc["files"]})
             sent.append(doc_id)
         except sc.SabyError as exc:

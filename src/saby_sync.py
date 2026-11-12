@@ -181,11 +181,13 @@ def _transport(sid: str, store: _Store, ours: Set[str]) -> None:
         cached = store.get(item["Идентификатор"])
         parent = our_waybills.get(item["Идентификатор"])
         if cached and cached.read_at and (cached.order_no or cached.cargo):
-            store.put(item["Идентификатор"], "waybill", item, parent_id=parent or cached.parent_id)
+            store.put(item["Идентификатор"], "waybill", item, parent_id=parent or cached.parent_id,
+                      ours=(cached.order_no or "") in ours)
             continue
         card = sc.read_card(sid, sc.TMS_URL, item["Идентификатор"], sc.WAYBILL_TYPE)
         facts = sc.waybill_facts(sc.attachment_xml(sid, card, "ЭТрН"))
-        mine = facts["order_no"] in ours or facts["cargo"].strip().lower() == OBED_CARGO
+        # Своя — только по номеру ЯЛ: груз «Готовые обеды» есть и у накладных Самоката
+        mine = facts["order_no"] in ours
         store.put(item["Идентификатор"], "waybill", item, order_no=facts["order_no"] or None,
                   cargo=facts["cargo"][:150] or None, address=facts["address"][:400] or None,
                   parent_id=parent, ours=mine, read_at=datetime.utcnow())

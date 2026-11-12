@@ -123,11 +123,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const shipDone = processed === n;
         const step2 = stepCard(2, 'Реализации',
             `Создано ${s.shipments} из ${n}, проведено ${processed}${sel}`,
-            admin && !shipDone ? [
-                btn('ship-all', 'Создать и провести', { primary: true, disabled: !toCreate.length && !toProcess.length }),
-                set.hide_split_shipments ? '' : btn('ship-create', 'Создать', { disabled: !toCreate.length, title: toCreate.length ? '' : 'Создавать нечего: у точек уже есть реализации или нет строки реестра' }),
-                set.hide_split_shipments ? '' : btn('ship-process', 'Провести', { disabled: !toProcess.length, title: toProcess.length ? '' : 'Нет созданных и непроведённых реализаций' }),
-            ].join('') : '',
+            admin && !shipDone ? (!toCreate.length && toProcess.length
+                ? btn('ship-process', 'Провести', { primary: true })
+                : [
+                    btn('ship-all', 'Создать и провести', { primary: true, disabled: !toCreate.length && !toProcess.length }),
+                    set.hide_split_shipments ? '' : btn('ship-create', 'Создать', { disabled: !toCreate.length, title: toCreate.length ? '' : 'Создавать нечего: у точек уже есть реализации или нет строки реестра' }),
+                    set.hide_split_shipments ? '' : btn('ship-process', 'Провести', { disabled: !toProcess.length, title: toProcess.length ? '' : 'Нет созданных и непроведённых реализаций' }),
+                ].join('')) : '',
             shipDone);
 
         // 3. Заказ на перевозку
@@ -160,7 +162,9 @@ document.addEventListener('DOMContentLoaded', () => {
         else if (!ready) state4 = 'После подписи заказа на перевозку';
         else state4 = `Создано ${s.waybills} из ${n}${drafts.size ? `, не подписано ${drafts.size}` : ''}${sel}`;
         let body4 = '';
-        if (admin && ready) {
+        if (admin && ready && !toWaybill.length && toSign.length) {
+            body4 = btn('waybill-sign', 'Подписать', { primary: true });
+        } else if (admin && ready) {
             body4 = [
                 btn('waybill-all', 'Создать и подписать', { primary: true, disabled: !toWaybill.length && !toSign.length }),
                 set.hide_split_waybills ? '' : btn('waybill-create', 'Создать', { disabled: !toWaybill.length }),
@@ -169,7 +173,24 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         const step4 = stepCard(4, 'ЭТрН', state4, body4, s.waybills === n && !drafts.size, !ready);
 
-        return `<section class="saby-steps">${step1}${step2}${step3}${step4}</section>`;
+        // 5. УПД: Лавка прислала акт приёмки — подписываем и отправляем УПД, срок 5 дней
+        const updReady = new Set(d.upd_ready);
+        const toUpd = t.filter(p => updReady.has(p.order_no));
+        const accepted = s.accepted;
+        const deadline = d.upd_deadline ? new Date(d.upd_deadline + 'T00:00:00') : null;
+        const daysLeft = deadline ? Math.round((deadline - new Date(new Date().toDateString())) / 86400000) : null;
+        const due = deadline && updReady.size
+            ? ` · отправить до ${deadline.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}${daysLeft < 0 ? ' — просрочено' : daysLeft === 0 ? ' — сегодня' : ''}`
+            : '';
+        let state5;
+        if (!accepted && !s.upd_sent) state5 = 'После акта приёмки от Лавки';
+        else state5 = `Отправлено ${s.upd_sent} из ${n}${updReady.size ? `, ждут ${updReady.size}` : ''}${due}${sel}`;
+        const body5 = admin && updReady.size
+            ? btn('upd-sign', 'Подписать и отправить', { primary: true, disabled: !toUpd.length, title: toUpd.length ? '' : 'Среди выбранных точек УПД не ждёт никто' })
+            : '';
+        const step5 = stepCard(5, 'УПД', state5, body5, n > 0 && s.upd_sent === n, !accepted && !s.upd_sent);
+
+        return `<section class="saby-steps">${step1}${step2}${step3}${step4}${step5}</section>`;
     }
 
     // --- Таблица ---
@@ -215,7 +236,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if ((lastResult.notes || []).length) parts.push(`<div class="lavka-notice lavka-notice-info">${lastResult.notes.map(esc).join('<br>')}</div>`);
         }
         if ((d.unknown_weight || []).length) parts.push(`<div class="lavka-notice">Вес не определился — в перевозке посчитан нулём: ${d.unknown_weight.map(esc).join(', ')}. Укажите вес в карточке товара.</div>`);
-        if (d.loose_waybills.length) parts.push(`<div class="lavka-notice">ЭТрН с грузом Обеда без нашего номера заказа: ${d.loose_waybills.map(w => `№ ${esc(w.number)}`).join(', ')}.</div>`);
         if (d.registry_free.length) parts.push(`<div class="lavka-notice lavka-notice-info">В реестре 1С за этот день есть строки без нашей точки: ${d.registry_free.map(r => `№ ${esc(r.number)} ${esc(r.address || '')}`).join('; ')}.</div>`);
         notices.innerHTML = parts.join('');
     }
@@ -295,11 +315,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function sign(kind) {
         const tr = data.our_transport;
-        const orders = kind === 'waybill' ? targets().map(p => p.order_no).filter(o => data.draft_waybills.includes(o)) : [];
+        const pool = kind === 'waybill' ? data.draft_waybills : kind === 'upd' ? data.upd_ready : [];
+        const orders = targets().map(p => p.order_no).filter(o => pool.includes(o));
+        const count = selecting ? orders.length : pool.length;
         const ok = await SabySign.sign({
             day: day(), kind, orders: selecting ? orders : [],
-            title: kind === 'transport' ? `Заказ на перевозку № ${tr ? tr.number : ''}` : 'ЭТрН',
-            what: kind === 'transport' ? 'Подпись отправит заказ перевозчику.' : `Подпись отметит погрузку и отправит накладные Лавке: ${selecting ? orders.length : data.draft_waybills.length}.`,
+            title: kind === 'transport' ? `Заказ на перевозку № ${tr ? tr.number : ''}` : kind === 'upd' ? 'УПД' : 'ЭТрН',
+            what: kind === 'transport' ? 'Подпись отправит заказ перевозчику.'
+                : kind === 'upd' ? `СБИС сформирует УПД из реализаций и отправит их Лавке: ${count}. Сначала внесите в СБИС изменения по бумажным накладным — отправленный УПД не отзывается, только исправляется корректировкой.`
+                : `Подпись отметит погрузку и отправит накладные Лавке: ${count}.`,
         });
         if (ok) { setBusy(true, 'Перечитываю день'); await waitTask(); setBusy(false); await load(); }
     }
@@ -352,7 +376,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (name === 'waybill-all' && data.draft_waybills.length) await sign('waybill');
                 return;
             }
-            if (name === 'waybill-sign') { await sign('waybill'); }
+            if (name === 'waybill-sign') { await sign('waybill'); return; }
+            if (name === 'upd-sign') { await sign('upd'); }
         } catch (err) {
             setBusy(false);
             toast(err.message, 'error');
