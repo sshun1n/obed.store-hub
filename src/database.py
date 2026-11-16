@@ -243,6 +243,12 @@ class SamokatOrder(Base):
     order_date = Column(Date, nullable=True)                  # дата из имени файла
     point_id = Column(Integer, ForeignKey("samokat_points.id"), nullable=False, index=True)
     order_no = Column(String(20), nullable=True)              # УР-12011572, из СБИС
+    saby_order_id = Column(String(64), nullable=True)         # ЗаказВх в кабинете
+    # Реализация, созданная приложением (черновик). Состояние — на момент создания
+    shipment_id = Column(String(64), nullable=True)
+    shipment_number = Column(String(30), nullable=True)
+    shipment_state = Column(String(100), nullable=True)
+    shipment_created_by = Column(String(100), nullable=True)
     total_quantity = Column(Integer, default=0)
     total_gross = Column(Numeric(12, 2), default=0)
     source_message_id = Column(String(255), nullable=True)

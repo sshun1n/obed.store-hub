@@ -7,12 +7,14 @@
 """
 from datetime import date
 from typing import Dict, List
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
+from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from src import auth, database, lavka_mail
+from src import auth, database, lavka_mail, saby_client, samokat_saby
 from src.api_lavka import _money, compare_range, format_range, short_address, sort_key
 from src.api_v1 import product_title
 from src.database import get_db
@@ -98,6 +100,13 @@ def samokat_summary(start: date, end: date, db: Session = Depends(get_db), user=
     }
 
 
+def _shipment_text(order) -> str:
+    if not order.shipment_number:
+        return ""
+    draft = order.shipment_state in (None, "", "Черновик", "Документ редактируется")
+    return f"реализация № {order.shipment_number}" + (" (черновик)" if draft else f", {order.shipment_state}")
+
+
 @router.get("/orders")
 def samokat_orders(start: date, end: date, db: Session = Depends(get_db), user=Depends(auth.get_current_user)):
     start, end = _check_range(start, end)
@@ -108,7 +117,8 @@ def samokat_orders(start: date, end: date, db: Session = Depends(get_db), user=D
         lines = sorted(o.lines, key=lambda l: sort_key(l.name, l.quantity))
         address = o.point.address if o.point else ""
         result.append({
-            "id": o.id, "order_no": o.order_no or "", "delivery_date": o.delivery_date.isoformat(),
+            "id": o.id, "order_no": " · ".join(x for x in (o.order_no, _shipment_text(o)) if x),
+            "delivery_date": o.delivery_date.isoformat(),
             "point": "", "address": address, "address_short": short_address(address),
             "positions": len(lines), "quantity": int(o.total_quantity or 0), "gross": _money(o.total_gross),
             "revised": o.revised_at is not None,
@@ -117,3 +127,37 @@ def samokat_orders(start: date, end: date, db: Session = Depends(get_db), user=D
         })
     result.sort(key=lambda r: (r["delivery_date"], r["address_short"].lower()))
     return result
+
+
+# --- СБИС: черновики реализаций с УПД ---
+
+class DraftsIn(BaseModel):
+    day: date
+    dry_run: bool = True
+    orders: List[str] = []      # номера УР-; пусто — все точки дня
+
+
+@router.post("/shipments")
+def samokat_shipments(data: DraftsIn, admin=Depends(auth.admin_only)):
+    """Проверка (dry_run) или создание черновиков реализаций. Ничего не отправляет. Только админ."""
+    if not saby_client.configured():
+        raise HTTPException(status_code=400, detail="Не заданы SABY_LOGIN и SABY_PASSWORD в .env сервера")
+    if not samokat_saby.start(data.day, admin.login, data.dry_run, data.orders or None):
+        raise HTTPException(status_code=409, detail="Другая операция с СБИС ещё идёт, дождитесь её окончания")
+    return {"started": True}
+
+
+@router.get("/shipments/status")
+def samokat_shipments_status(admin=Depends(auth.admin_only)):
+    return samokat_saby.progress()
+
+
+@router.get("/shipments/preview")
+def samokat_preview(order_no: str, admin=Depends(auth.admin_only)):
+    """УПД последней проверки — файлом, как он ушёл бы в СБИС."""
+    found = samokat_saby.preview(order_no)
+    if found is None:
+        raise HTTPException(status_code=404, detail="Нет файла: сначала «Проверить без создания»")
+    name, content = found
+    return Response(content=content, media_type="application/xml",
+                    headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}.xml"})
