@@ -137,6 +137,24 @@
                     <button type="button" class="btn btn-secondary btn-sm" id="historyBtn" title="Перечитать весь ящик с начала. Уже загруженное пропускается">Загрузить историю</button>
                 </div>
             </div>
+
+            <div class="card">
+                <h2 class="card-title-small">СБИС</h2>
+                <p class="field-hint mail-intro">Приложение само перечитывает кабинет за ближайшие дни поставки Лавки и Самоката: от позавчера до трёх дней вперёд. Только чтение — документы не создаются.</p>
+                <h3 class="form-subhead">Автообновление из кабинета</h3>
+                <div class="sync-auto-row">
+                    <label class="switch" title="Включить или выключить автообновление СБИС">
+                        <input type="checkbox" id="sabySyncEnabled" role="switch" aria-label="Автообновление СБИС">
+                        <span class="switch-track"></span>
+                    </label>
+                    <div class="sync-auto-text">
+                        <div class="sync-auto-state" id="sabySyncState"></div>
+                        <div class="field-hint" id="sabySyncSummary"></div>
+                    </div>
+                    <button type="button" class="btn btn-secondary btn-sm" id="sabySyncConfigureBtn">Настроить</button>
+                </div>
+                <p class="field-hint poll-last" id="sabySyncLast"></p>
+            </div>
         </div>
     </div>
 
@@ -228,10 +246,53 @@
         </div>
     </div>
 
+    <div class="modal" id="sabySyncModal">
+        <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="sabySyncTitle">
+            <h2 class="card-title-small" id="sabySyncTitle">Автообновление СБИС</h2>
+            <form id="sabySyncForm" class="form-layout">
+                <div class="form-group">
+                    <span class="control-label">Дни</span>
+                    <div class="wd-toggles" id="sabySyncDays"></div>
+                    <div class="quick-dates sync-day-presets">
+                        <button type="button" class="chip" data-days="0,1,2,3,4">Будни</button>
+                        <button type="button" class="chip" data-days="1,3,5">Дни поставок</button>
+                        <button type="button" class="chip" data-days="0,1,2,3,4,5,6">Все дни</button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="sabySyncInterval" class="control-label">Интервал</label>
+                    <select id="sabySyncInterval" class="styled-text-input">
+                        <option value="15">15 минут</option>
+                        <option value="30">30 минут</option>
+                        <option value="60">1 час</option>
+                        <option value="120">2 часа</option>
+                    </select>
+                </div>
+                <div class="form-grid-2">
+                    <div class="form-group">
+                        <label for="sabySyncStart" class="control-label">С</label>
+                        <input type="time" id="sabySyncStart" class="styled-date-input" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="sabySyncEnd" class="control-label">До</label>
+                        <input type="time" id="sabySyncEnd" class="styled-date-input" required>
+                    </div>
+                </div>
+                <span class="field-hint">Время московское. В остальное время кабинет перечитывается только кнопкой «Обновить из СБИС».</span>
+                <span class="error-msg sync-settings-error" id="sabySyncError"></span>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" id="sabySyncCancel">Отмена</button>
+                    <button type="submit" class="btn btn-primary">Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script src="/static/hub-ui.js?v=1.10.0"></script>
     <script src="/static/time-picker.js?v=1.21.0"></script>
     <script src="/static/admin.js?v=1.9.4"></script>
     <script src="/static/mail-settings.js?v=1.13.1"></script>
+    <script src="/static/saby-sync-settings.js?v=1.0.0"></script>
     <div id="hubEnd" hidden></div>
 </body>
 </html>

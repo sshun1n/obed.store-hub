@@ -126,7 +126,7 @@ def create_transport(day: date, numbers: List[str], carrier_id: int, user: str) 
         carrier = db.get(database.Carrier, carrier_id)
         if carrier is None or not carrier.is_active:
             raise TransportError("Перевозчик не найден")
-        s = sa.get_settings(db)
+        s = sa.get_settings(db, "samokat")
         own, _ = sa._parties(db)
         orders = _orders(db, day, numbers)
         w, unknown = weights(db, orders, s.bag_weight_kg)
@@ -197,7 +197,7 @@ def create_waybills(day: date, numbers: List[str], user: str, dry_run: bool = Fa
     result = {"done": [], "errors": {}, "notes": [], "skipped": [], "dry_run": dry_run}
     try:
         transport = our_transport(db, day)
-        s = sa.get_settings(db)
+        s = sa.get_settings(db, "samokat")
         if transport is None and dry_run:
             # Проверка до заказа на перевозку: номер заказа условный, перевозчик — последний выбранный
             transport = SimpleNamespace(number="0", saby_id=None, state=sa.DRAFT, carrier_id=s.last_carrier_id)

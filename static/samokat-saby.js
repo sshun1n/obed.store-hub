@@ -248,6 +248,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function render() {
         const d = data;
         renderNotices();
+        el('settingsBtn').hidden = !d.is_admin;
         if (!d.points.length) {
             content.innerHTML = '<div class="empty-state"><h3>На этот день заказов Самоката нет</h3>Они приходят письмом и в СБИС как ORDERS.</div>';
             return;
@@ -437,6 +438,8 @@ document.addEventListener('DOMContentLoaded', () => {
             await load();
         } catch (err) { toast(err.message, 'error'); }
     });
+
+    SabySettings.init({ scope: 'samokat', button: el('settingsBtn'), onSaved: () => load() });
 
     // Операция идёт (в т. ч. запущенная не отсюда): ячейки показывают ход, шаги приглушены
     SabyTask.onUpdate((tasks) => {

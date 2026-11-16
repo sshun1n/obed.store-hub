@@ -185,7 +185,7 @@ def samokat_day(day: date, db: Session = Depends(get_db), user=Depends(auth.get_
     for d in sorted(docs, key=lambda x: x.id):
         if d.kind in by_kind and d.order_no and d.state != "Удалён":
             by_kind[d.kind][d.order_no] = d
-    settings = saby_actions.get_settings(db)
+    settings = saby_actions.get_settings(db, "samokat")
     weights, unknown_weight = samokat_transport.weights(db, [o for o in rows if o.order_no], settings.bag_weight_kg)
     transport = samokat_transport.our_transport(db, day)
     used, points = set(), []

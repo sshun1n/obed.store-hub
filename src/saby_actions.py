@@ -43,10 +43,26 @@ class ActionError(sc.SabyError):
 
 # --- Настройки и стороны ---
 
-def get_settings(db) -> database.SabySettings:
-    row = db.query(database.SabySettings).first()
+SETTINGS_IDS = {"lavka": 1, "samokat": 2}
+# Поля, которые у Самоката свои: перевозка и ЭТрН. Остальное (автообновление,
+# проверка подписи перевозчика) — общее, в строке Лавки
+OWN_FIELDS = ("hide_split_shipments", "hide_split_transport", "hide_split_waybills", "pickup_address", "pickup_time",
+              "departure_time", "unload_time", "cargo_name", "cargo_state", "bag_weight_kg", "place_volume_m3",
+              "bag_length_cm", "bag_width_cm", "bag_height_cm", "temp_min", "temp_max", "sanitary_norms",
+              "vehicle_type", "body_type", "loading_type", "capacity_t", "volume_m3", "last_carrier_id")
+
+
+def get_settings(db, scope: str = "lavka") -> database.SabySettings:
+    """Настройки СБИС страницы: lavka (строка 1) или samokat (строка 2).
+    Настройки Самоката при первом обращении копируются с Лавки — дальше живут сами."""
+    row_id = SETTINGS_IDS[scope]
+    row = db.get(database.SabySettings, row_id)
     if row is None:
-        row = database.SabySettings(id=1)
+        row = database.SabySettings(id=row_id)
+        if row_id != 1:
+            base = get_settings(db)
+            for field in OWN_FIELDS:
+                setattr(row, field, getattr(base, field))
         db.add(row)
         db.commit()
         db.refresh(row)

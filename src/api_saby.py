@@ -202,15 +202,10 @@ async def saby_registry(file: UploadFile = File(...), db: Session = Depends(get_
 # --- Настройки ---
 
 class SettingsIn(BaseModel):
-    sync_enabled: bool = True
-    sync_interval_minutes: int = Field(30, ge=10, le=240)
-    sync_start_time: str = Field("07:00", pattern=r"^\d{2}:\d{2}$")
-    sync_end_time: str = Field("21:00", pattern=r"^\d{2}:\d{2}$")
-    sync_weekdays: List[int] = [0, 1, 2, 3, 4, 5, 6]
+    """Настройки страницы СБИС (Лавки или Самоката): кнопки, погрузка, груз, машина."""
     hide_split_shipments: bool = False
     hide_split_transport: bool = False
     hide_split_waybills: bool = False
-    poll_minutes: int = Field(20, ge=5, le=240)
     pickup_address: str = Field(..., min_length=5, max_length=300)
     pickup_time: str = Field(..., pattern=r"^\d{2}:\d{2}$")
     departure_time: str = Field(..., pattern=r"^\d{2}:\d{2}$")
@@ -232,32 +227,67 @@ class SettingsIn(BaseModel):
     volume_m3: float = Field(..., gt=0, le=200)
 
 
+def _scope(scope: str) -> str:
+    if scope not in saby_actions.SETTINGS_IDS:
+        raise HTTPException(status_code=400, detail="Неизвестная страница настроек")
+    return scope
+
+
 @router.get("/settings")
-def saby_settings_get(db: Session = Depends(get_db), admin=Depends(auth.admin_only)):
-    row = saby_actions.get_settings(db)
-    out = {key: getattr(row, key) for key in SettingsIn.model_fields}
-    out["sync_weekdays"] = [int(x) for x in (row.sync_weekdays or "0,1,2,3,4,5,6").split(",") if x != ""]
-    out["sync_last_at"] = row.sync_last_at.isoformat(timespec="minutes") if row.sync_last_at else None
-    out["sync_last_result"] = row.sync_last_result
-    return out
+def saby_settings_get(scope: str = "lavka", db: Session = Depends(get_db), admin=Depends(auth.admin_only)):
+    row = saby_actions.get_settings(db, _scope(scope))
+    return {key: getattr(row, key) for key in SettingsIn.model_fields}
 
 
 @router.put("/settings")
-def saby_settings_put(data: SettingsIn, db: Session = Depends(get_db), admin=Depends(auth.admin_only)):
+def saby_settings_put(data: SettingsIn, scope: str = "lavka", db: Session = Depends(get_db),
+                      admin=Depends(auth.admin_only)):
     if data.temp_min > data.temp_max:
         raise HTTPException(status_code=400, detail="Нижняя граница температуры выше верхней")
-    days = sorted({d for d in data.sync_weekdays if 0 <= d <= 6})
-    if data.sync_enabled and not days:
-        raise HTTPException(status_code=400, detail="Выберите хотя бы один день автообновления")
-    if data.sync_start_time >= data.sync_end_time:
-        raise HTTPException(status_code=400, detail="Время «с» должно быть раньше времени «до»")
-    row = saby_actions.get_settings(db)
+    row = saby_actions.get_settings(db, _scope(scope))
     for key, value in data.model_dump().items():
-        if key == "sync_weekdays":
-            value = ",".join(str(d) for d in days) or "0,1,2,3,4,5,6"
         setattr(row, key, value.strip() if isinstance(value, str) else value)
     db.commit()
     return {"ok": True}
+
+
+# --- Автообновление из кабинета: общее для Лавки и Самоката, в админ-панели ---
+
+class SyncIn(BaseModel):
+    enabled: bool = True
+    interval_minutes: int = Field(30, ge=10, le=240)
+    start_time: str = Field("07:00", pattern=r"^\d{2}:\d{2}$")
+    end_time: str = Field("21:00", pattern=r"^\d{2}:\d{2}$")
+    weekdays: List[int] = [0, 1, 2, 3, 4, 5, 6]
+
+
+def _sync_out(row) -> Dict:
+    return {"enabled": bool(row.sync_enabled), "interval_minutes": row.sync_interval_minutes or 30,
+            "start_time": row.sync_start_time or "07:00", "end_time": row.sync_end_time or "21:00",
+            "weekdays": [int(x) for x in (row.sync_weekdays or "0,1,2,3,4,5,6").split(",") if x != ""],
+            "summary": saby_actions.sync_summary(row),
+            "last_at": row.sync_last_at.isoformat(timespec="minutes") if row.sync_last_at else None,
+            "last_result": row.sync_last_result}
+
+
+@router.get("/sync-settings")
+def saby_sync_get(db: Session = Depends(get_db), admin=Depends(auth.admin_only)):
+    return _sync_out(saby_actions.get_settings(db))
+
+
+@router.put("/sync-settings")
+def saby_sync_put(data: SyncIn, db: Session = Depends(get_db), admin=Depends(auth.admin_only)):
+    days = sorted({d for d in data.weekdays if 0 <= d <= 6})
+    if data.enabled and not days:
+        raise HTTPException(status_code=400, detail="Выберите хотя бы один день")
+    if data.start_time >= data.end_time:
+        raise HTTPException(status_code=400, detail="Время «с» должно быть раньше времени «до»")
+    row = saby_actions.get_settings(db)
+    row.sync_enabled, row.sync_interval_minutes = data.enabled, data.interval_minutes
+    row.sync_start_time, row.sync_end_time = data.start_time, data.end_time
+    row.sync_weekdays = ",".join(str(d) for d in days) or "0,1,2,3,4,5,6"
+    db.commit()
+    return _sync_out(row)
 
 
 # --- Действия ---
