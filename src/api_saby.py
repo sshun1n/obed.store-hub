@@ -117,6 +117,15 @@ def saby_day(day: date, db: Session = Depends(get_db), user=Depends(auth.get_cur
             "registry": reg,
         })
 
+    # Реестр 1С общий: строки точек Самоката этого дня — не «лишние», их показывает страница Самоката
+    samokat = (db.query(database.SamokatOrder).options(joinedload(database.SamokatOrder.point))
+               .filter(database.SamokatOrder.delivery_date == day).all())
+    if samokat:
+        numbers = {o.shipment_number for o in samokat if o.shipment_number}
+        addresses = [o.point.address for o in samokat if o.point and o.point.address]
+        free = [r for r in free if r.number not in numbers
+                and not any(upd_registry.same_address(a, r.address or "") for a in addresses)]
+
     transport = [{**_doc(d), "party": d.party, "cargo": d.cargo,
                   "waybills": sum(1 for w in docs if w.kind == "waybill" and w.parent_id == d.saby_id)}
                  for d in docs if d.kind == "transport" and d.ours]

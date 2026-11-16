@@ -57,14 +57,14 @@
                 ${link('/', '00', 'Все сервисы')}
                 ${link('/nomenclature', '01', 'Номенклатура')}
                 ${link('/orders', '02', 'Заказы по точкам')}
-                <div class="side-caption">Лавка и СБИС</div>
-                ${link('/lavka', '03', 'Заказы Лавки')}
-                ${link('/lavka-reports', '04', 'Отчёты Лавки')}
-                ${link('/lavka-forecast', '05', 'Прогноз')}
-                ${link('/saby', '06', 'СБИС')}
+                <div class="side-caption">Яндекс Лавка</div>
+                ${link('/lavka', '03', 'Заказы')}
+                ${link('/saby', '04', 'СБИС')}
+                ${link('/lavka-reports', '05', 'Отчёты')}
+                ${link('/lavka-forecast', '06', 'Прогноз')}
                 <div class="side-caption">Самокат</div>
-                ${link('/samokat', '07', 'Заказы Самоката')}
-                ${link('/samokat-saby', '08', 'СБИС Самоката')}
+                ${link('/samokat', '07', 'Заказы')}
+                ${link('/samokat-saby', '08', 'СБИС')}
                 <div class="side-caption">Справочники</div>
                 ${isAdmin ? link('/timesheet', '09', 'Учёт времени') : ''}
                 ${isAdmin ? link('/employees', '10', 'Сотрудники', ['/employee']) : ''}
@@ -85,6 +85,14 @@
     }
 
     // Выделение пункта — отдельный элемент: он один и плавно ездит между пунктами
+    // Есть ли пункты выше или ниже видимой части меню — там оно гаснет
+    function fadeNav() {
+        const nav = document.querySelector('.side-nav');
+        if (!nav) return;
+        nav.classList.toggle('more-above', nav.scrollTop > 2);
+        nav.classList.toggle('more-below', nav.scrollTop + nav.clientHeight < nav.scrollHeight - 2);
+    }
+
     function placeMarker() {
         const marker = document.getElementById('sideMarker');
         if (!marker) return;
@@ -127,6 +135,20 @@
         document.body.insertAdjacentHTML('afterbegin', renderSidebar(currentUser));
         bindSidebarEvents();
         placeMarker();
+        // Меню прокручено так же, как на прошлой странице; активный пункт — всегда в видимой части
+        const nav = document.querySelector('.side-nav');
+        if (nav) {
+            try { nav.scrollTop = Number(sessionStorage.getItem('obed_side_scroll')) || 0; } catch { /* не критично */ }
+            const active = nav.querySelector('.side-link.active');
+            if (active && (active.offsetTop < nav.scrollTop || active.offsetTop + active.offsetHeight > nav.scrollTop + nav.clientHeight)) {
+                nav.scrollTop = active.offsetTop - nav.clientHeight / 2;
+            }
+            nav.addEventListener('scroll', () => {
+                fadeNav();
+                try { sessionStorage.setItem('obed_side_scroll', String(nav.scrollTop)); } catch { /* не критично */ }
+            }, { passive: true });
+        }
+        fadeNav();
     }
 
     // Страницы подгружаются заранее, при наведении на пункт меню: переход не ждёт сети
@@ -157,7 +179,8 @@
     addPrefetch();
 
     // Шрифт мог изменить высоту пунктов
-    document.fonts?.ready.then(placeMarker);
+    document.fonts?.ready.then(() => { placeMarker(); fadeNav(); });
+    window.addEventListener('resize', fadeNav);
 
     // Возврат кнопкой «назад» показывает страницу из памяти, с выделением на другом пункте
     window.addEventListener('pageshow', (ev) => {
