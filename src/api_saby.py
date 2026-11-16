@@ -191,8 +191,12 @@ async def saby_registry(file: UploadFile = File(...), db: Session = Depends(get_
     except upd_registry.RegistryError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     days = sorted({r.day for r in rows})
-    db.query(database.UpdRow).filter(database.UpdRow.day.in_(days)).delete(synchronize_session=False)
+    # Реестр общий для Лавки и Самоката, а 1С выгружает его кусками: файл заменяет только
+    # свои строки (день + номер). Раньше он стирал день целиком, и файл Самоката за 12.11
+    # удалил строки Лавки за тот же день
     for r in rows:
+        db.query(database.UpdRow).filter(database.UpdRow.day == r.day,
+                                         database.UpdRow.number == r.number).delete(synchronize_session=False)
         db.add(database.UpdRow(day=r.day, number=r.number, amount=r.amount, address=r.address[:300] or None))
     db.commit()
     return {"rows": len(rows), "days": [d.isoformat() for d in days],

@@ -27,9 +27,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const timeText = (iso) => {
         if (!iso) return '';
         const [d, t] = iso.split('T');
-        const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
-        if (d === Hub.isoDate(new Date())) return `сегодня в ${t.slice(0, 5)}`;
-        if (d === Hub.isoDate(tomorrow)) return `завтра в ${t.slice(0, 5)}`;
+        // «Сегодня» — по Москве, как время с сервера: у компьютера может стоять другой пояс
+        const msk = (ms) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Moscow' }).format(new Date(ms));
+        if (d === msk(Date.now())) return `сегодня в ${t.slice(0, 5)}`;
+        if (d === msk(Date.now() + 86400000)) return `завтра в ${t.slice(0, 5)}`;
+        if (d === msk(Date.now() - 86400000)) return `вчера в ${t.slice(0, 5)}`;
         return `${Hub.fmtDate(d)} в ${t.slice(0, 5)}`;
     };
     const kg = (v) => `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 }).format(v || 0)} кг`;
