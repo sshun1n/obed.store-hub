@@ -2350,3 +2350,7 @@ body:has(.saby-task.show) .toast-host { bottom: 112px; }
 .saby-step-doc span { font-size: 0.72rem; color: var(--muted); }
 .saby-step-doc:hover, .saby-step-doc:hover span { color: var(--red); }
 .saby-step-status { display: block; margin-top: 6px; }
+
+/* Поля окна подписи прячутся атрибутом hidden: .form-group с display:flex его перебивал,
+   и «Перевозчик» с пустым «Сертификатом» показывались там, где их быть не должно */
+.saby-sign [hidden] { display: none !important; }
