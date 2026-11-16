@@ -190,6 +190,8 @@ def create_drafts(day: date, user: str, dry_run: bool, only: Optional[List[str]]
                 doc = sc.write_document(sid, sc.DOCS_URL, {
                     "Тип": sc.SHIPMENT_TYPE, "Номер": row.number, "Дата": day.strftime("%d.%m.%Y"),
                     "Примечание": address,
+                    # Срок поставки из заказа: без него в карточке реализации поле пустое
+                    "Срок": day.strftime("%d.%m.%Y"),
                     "НашаОрганизация": card.get("НашаОрганизация") or {},
                     "Контрагент": contractor,
                     "ДокументОснование": [{"ВидСвязи": "Обычная связь", "Документ": {"Идентификатор": item["Идентификатор"]}}],
