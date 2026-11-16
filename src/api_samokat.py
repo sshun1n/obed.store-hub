@@ -242,7 +242,8 @@ def samokat_day(day: date, db: Session = Depends(get_db), user=Depends(auth.get_
                   "waybills": sum(1 for p in points if p["waybill"]),
                   "our_waybills": sum(1 for p in points if p["waybill_ours"])},
         "points": points,
-        "settings": {"hide_split_transport": bool(settings.hide_split_transport),
+        "settings": {"hide_split_shipments": bool(settings.hide_split_shipments),
+                     "hide_split_transport": bool(settings.hide_split_transport),
                      "hide_split_waybills": bool(settings.hide_split_waybills)},
         "carriers": [{"id": c.id, "name": c.name} for c in db.query(database.Carrier)
                      .filter(database.Carrier.is_active.is_(True)).order_by(database.Carrier.name)],
@@ -252,6 +253,8 @@ def samokat_day(day: date, db: Session = Depends(get_db), user=Depends(auth.get_
             "signed_by_carrier": transport.state in saby_client.FINISHED, "waiting": waiting,
             "next_check_at": api_saby._local(transport.next_check_at) if waiting else None},
         "draft_waybills": [d.order_no for d in docs if d.kind == "sm_waybill" and d.state == saby_actions.DRAFT],
+        # Черновики реализаций, созданные приложением: их подписывает «Подписать»
+        "draft_shipments": [d.order_no for d in saby_actions.samokat_drafts(db, day)],
         "unknown_weight": unknown_weight,
         "receiver_problem": receiver_problem,
     }

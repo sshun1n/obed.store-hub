@@ -647,7 +647,20 @@ KINDS = {"transport": (sc.TRANSPORT_TYPE, ORDER_ACTIONS, sc.TMS_URL, None),
          "upd": (sc.SHIPMENT_TYPE, (), sc.DOCS_URL, UPD_STEP),
          # Самокат: свои заказ на перевозку и ЭТрН (samokat_transport), подписываются так же
          "sm_transport": (sc.TRANSPORT_TYPE, ORDER_ACTIONS, sc.TMS_URL, None),
-         "sm_waybill": (sc.WAYBILL_TYPE, WAYBILL_ACTIONS, sc.TMS_URL, None)}
+         "sm_waybill": (sc.WAYBILL_TYPE, WAYBILL_ACTIONS, sc.TMS_URL, None),
+         # Реализация Самоката с УПД: черновик уходит тем же шагом «Отправка», но с подписью —
+         # УПД у Самоката идёт вместе с реализацией. Карточку не открываем (шаг известен заранее)
+         "sm_upd": (sc.SHIPMENT_TYPE, (), sc.DOCS_URL, UPD_STEP)}
+
+
+def samokat_drafts(db, day: date) -> List[database.SabyDoc]:
+    """Черновики реализаций Самоката, созданные приложением: только их и подписываем.
+    Чужие (сделанные в кабинете руками) не трогаем — как у Лавки."""
+    ours = {o.order_no for o in db.query(database.SamokatOrder).filter(
+        database.SamokatOrder.delivery_date == day, database.SamokatOrder.shipment_created_by.isnot(None))}
+    return [d for d in db.query(database.SabyDoc).filter(
+        database.SabyDoc.delivery_date == day, database.SabyDoc.kind == "sm_shipment",
+        database.SabyDoc.state == DRAFT) if d.order_no in ours]
 
 
 def upd_ready(doc: database.SabyDoc) -> bool:
@@ -663,6 +676,9 @@ def upd_ready(doc: database.SabyDoc) -> bool:
 def sign_targets(db, day: date, kind: str, numbers: List[str]) -> List[database.SabyDoc]:
     """Что подписывать: наши черновики нужного вида за день (по выбранным точкам для ЭТрН),
     для УПД — наши реализации с актом приёмки и без отправленного УПД."""
+    if kind == "sm_upd":
+        docs = samokat_drafts(db, day)
+        return [d for d in docs if d.order_no in set(numbers)] if numbers else docs
     if kind == "upd":
         docs = [d for d in db.query(database.SabyDoc).filter(
             database.SabyDoc.delivery_date == day, database.SabyDoc.kind == "shipment",
@@ -703,6 +719,14 @@ def prepare_signing(day: date, kind: str, numbers: List[str], thumbprint: str) -
             kinds = set(sc.attachments(item or {}))
             if item is None or item.get("Удален") == "Да" or "УпдСчфДоп" in kinds or "АктПриемки" not in kinds:
                 skipped[f"№ {number}"] = "уже не ждёт УПД — обновите из СБИС"
+                ids.pop(saby_id)
+    if kind == "sm_upd":
+        # Самокат: подписываем только то, что и сейчас черновик с нашим УПД — по свежему списку
+        fresh = {i["Идентификатор"]: i for i in sc.list_documents(sid, sc.DOCS_URL, sc.SHIPMENT_TYPE, start=day, end=day)}
+        for saby_id, (number, _) in list(ids.items()):
+            item = fresh.get(saby_id)
+            if item is None or item.get("Удален") == "Да" or sc.state(item) != DRAFT or not sc.attachments(item):
+                skipped[f"№ {number}"] = "уже не черновик с УПД — обновите из СБИС"
                 ids.pop(saby_id)
     for saby_id, (number, _) in ids.items():
         try:

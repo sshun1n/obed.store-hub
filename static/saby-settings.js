@@ -23,7 +23,7 @@ window.SabySettings = (() => {
                     <section>
                         <h3>Кнопки</h3>
                         <p class="field-hint">Рядом с «Создать и подписать» есть кнопки для отдельных шагов. Их можно спрятать.</p>
-                        ${scope === 'lavka' ? toggle('Реализации: прятать «Создать» и «Провести»', 'hide_split_shipments') : ''}
+                        ${toggle(scope === 'lavka' ? 'Реализации: прятать «Создать» и «Провести»' : 'Реализации: прятать «Создать» и «Подписать»', 'hide_split_shipments')}
                         ${toggle('Заказ на перевозку: прятать «Создать» и «Подписать»', 'hide_split_transport')}
                         ${toggle('ЭТрН: прятать «Создать» и «Подписать»', 'hide_split_waybills')}
                     </section>

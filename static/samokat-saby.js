@@ -80,7 +80,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function shipmentCell(p) {
         const ship = p.shipment, reg = regMark(p);
         if (!ship) return `<span class="saby-none">нет</span>${reg ? `<div class="saby-sub">${reg}</div>` : ''}`;
-        const upd = ship.upd ? ' <span class="st st-ok">УПД ушёл</span>' : '';
+        // Вложение УПД есть и у черновика — «ушёл» только после отправки
+        const upd = ship.upd && !/редактируется|черновик/i.test(ship.state || 'Черновик') ? ' <span class="st st-ok">УПД ушёл</span>' : '';
         return `${link(ship.link, `№ ${esc(ship.number || '—')}`)} ${chip(ship.state || 'Черновик')}${upd}${reg ? `<div class="saby-sub">${reg}</div>` : ''}`;
     }
     function waybillCell(p) {
@@ -125,17 +126,27 @@ document.addEventListener('DOMContentLoaded', () => {
             admin ? btn('registry', d.registry_rows ? 'Заменить реестр' : 'Загрузить реестр', { primary: !d.registry_rows }) : '',
             s.registry === n);
 
-        // 3. Реализации и УПД: у Самоката УПД уходит вместе с реализацией, а не после приёмки
+        // 3. Реализации и УПД: у Самоката УПД уходит вместе с реализацией, а не после приёмки.
+        // «Подписать» отправляет только черновики, созданные приложением
+        const set3 = d.settings || {};
         const toCreate = t.filter(p => !p.shipment && p.registry && p.order_no);
-        const step3 = stepCard(3, 'Реализации и УПД',
-            `Создано ${s.shipments} из ${n}, отправлено ${s.sent}${sel}`,
-            admin && s.sent < n ? [
-                btn('create', 'Создать черновики', { primary: true, disabled: !toCreate.length,
+        const shipDrafts = new Set(d.draft_shipments || []);
+        const toSend = t.filter(p => shipDrafts.has(p.order_no));
+        const check = btn('check', 'Проверить', { title: 'Собрать УПД по точкам, ничего не создавая — можно скачать файлы' });
+        let body3 = '';
+        if (admin && s.sent < n) {
+            body3 = !toCreate.length && toSend.length ? btn('ship-sign', 'Подписать', { primary: true }) + check : [
+                btn('ship-all', 'Создать и подписать', { primary: true, disabled: !toCreate.length && !toSend.length }),
+                set3.hide_split_shipments ? '' : btn('create', 'Создать', { disabled: !toCreate.length,
                     title: toCreate.length ? 'Реализации с УПД черновиками, без отправки' : 'Создавать нечего: у точек уже есть реализации, нет строки реестра или заказ не найден в кабинете' }),
-                btn('check', 'Проверить', { title: 'Собрать УПД по точкам, ничего не создавая — можно скачать файлы' }),
-                btn('send', 'Подписать и отправить', { disabled: true, title: 'Скоро: отправку включим, когда черновики проверены' }),
-            ].join('') : '',
-            n > 0 && s.sent === n);
+                set3.hide_split_shipments ? '' : btn('ship-sign', 'Подписать', { disabled: !toSend.length,
+                    title: toSend.length ? 'Подписать Рутокеном и отправить Самокату' : 'Нет черновиков, созданных приложением' }),
+                check,
+            ].join('');
+        }
+        const step3 = stepCard(3, 'Реализации и УПД',
+            `Создано ${s.shipments} из ${n}, отправлено ${s.sent}${shipDrafts.size ? `, не подписано ${shipDrafts.size}` : ''}${sel}`,
+            body3, n > 0 && s.sent === n);
 
         // 4. Заказ на перевозку: свой на день Самоката, все точки одним рейсом — как у Лавки
         const set = d.settings || {};
@@ -315,13 +326,15 @@ document.addEventListener('DOMContentLoaded', () => {
     // Подпись Рутокеном в браузере — тем же окном, что у Лавки; потом кабинет перечитывается фоном
     async function sign(kind) {
         const tr = data.our_transport;
-        const pool = kind === 'sm_waybill' ? data.draft_waybills : [];
+        const pool = kind === 'sm_waybill' ? data.draft_waybills : kind === 'sm_upd' ? (data.draft_shipments || []) : [];
         const orders = targets().map(p => p.order_no).filter(o => pool.includes(o));
         const count = selecting ? orders.length : pool.length;
         const ok = await SabySign.sign({
             day: day(), kind, orders: selecting ? orders : [],
-            title: kind === 'sm_transport' ? `Заказ на перевозку № ${tr ? tr.number : ''}` : 'ЭТрН Самоката',
+            title: kind === 'sm_transport' ? `Заказ на перевозку № ${tr ? tr.number : ''}`
+                : kind === 'sm_upd' ? 'Реализации с УПД' : 'ЭТрН Самоката',
             what: kind === 'sm_transport' ? 'Подпись отправит заказ перевозчику.'
+                : kind === 'sm_upd' ? `Подпись отправит реализации с УПД Самокату: ${count}. Отправленный УПД не отзывается — только исправляется корректировкой.`
                 : `Подпись отметит погрузку и отправит накладные Самокату: ${count}.`,
         });
         if (ok) {
@@ -369,6 +382,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             if (name === 'waybill-sign') { await sign('sm_waybill'); return; }
+            if (name === 'ship-sign') { await sign('sm_upd'); return; }
+            if (name === 'ship-all') {
+                const create = targets().filter(p => !p.shipment && p.registry && p.order_no);
+                if (create.length) {
+                    if (!(await confirmCreate('реализации с УПД', create.length))) return;
+                    await run('/api/v1/samokat/shipments', { day: day(), dry_run: false, orders });
+                }
+                if ((data.draft_shipments || []).length) await sign('sm_upd');
+                return;
+            }
             if (name === 'create') {
                 const count = targets().filter(p => !p.shipment && p.registry && p.order_no).length;
                 const ok = await Hub.confirmDialog({
