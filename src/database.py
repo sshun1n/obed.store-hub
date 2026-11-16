@@ -217,6 +217,58 @@ class LavkaOrderLine(Base):
 
     order = relationship("LavkaOrder", back_populates="lines")
 
+# --- ЗАКАЗЫ «САМОКАТА» (ООО «Умный ритейл», из почты) ---
+
+# Заказы шлёт ordermanager@samokat.ru. Отправитель не настраивается: поле
+# senders в mail_settings — про роботов Лавки, и правка там «Самокат» не отключит
+SAMOKAT_SENDERS = ("ordermanager@samokat.ru",)
+
+class SamokatPoint(Base):
+    # Точка доставки (даркстор, ЦФЗ). В файле есть только адрес, он и ключ
+    __tablename__ = "samokat_points"
+
+    id = Column(Integer, primary_key=True, index=True)
+    key = Column(String(300), unique=True, nullable=False)   # адрес без индекса, регистра и знаков
+    address = Column(String(300), nullable=False)            # как в последнем файле
+    gln = Column(String(13), nullable=True)                  # из ORDERS в СБИС, когда свяжем
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class SamokatOrder(Base):
+    # Заказ на одну точку на один день. Номер УР- приходит отдельно, в ORDERS СБИС
+    __tablename__ = "samokat_orders"
+    __table_args__ = (UniqueConstraint("delivery_date", "point_id", name="uq_samokat_order_day_point"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    delivery_date = Column(Date, nullable=False, index=True)  # «Заказ на 18.11.26»
+    order_date = Column(Date, nullable=True)                  # дата из имени файла
+    point_id = Column(Integer, ForeignKey("samokat_points.id"), nullable=False, index=True)
+    order_no = Column(String(20), nullable=True)              # УР-12011572, из СБИС
+    total_quantity = Column(Integer, default=0)
+    total_gross = Column(Numeric(12, 2), default=0)
+    source_message_id = Column(String(255), nullable=True)
+    source_filename = Column(String(255), nullable=True)
+    imported_at = Column(DateTime, default=datetime.utcnow)
+    revised_at = Column(DateTime, nullable=True)
+
+    point = relationship("SamokatPoint")
+    lines = relationship("SamokatOrderLine", back_populates="order", cascade="all, delete-orphan",
+                         order_by="SamokatOrderLine.id")
+
+class SamokatOrderLine(Base):
+    __tablename__ = "samokat_order_lines"
+
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("samokat_orders.id", ondelete="CASCADE"), nullable=False, index=True)
+    barcode = Column(String(20), nullable=False, index=True)   # те же коды, что у Лавки
+    vendor_code = Column(String(30), nullable=True)            # «Арктикул», сейчас равен штрих-коду
+    name = Column(String(300), nullable=False)                 # без марки
+    name_raw = Column(String(400), nullable=False)
+    quantity = Column(Integer, nullable=False)
+    price_gross = Column(Numeric(10, 2), nullable=False)       # «Цена» — с НДС, как в ORDERS
+    sum_gross = Column(Numeric(12, 2), nullable=False)
+
+    order = relationship("SamokatOrder", back_populates="lines")
+
 class LavkaMailFile(Base):
     # Журнал разобранных вложений. Ключ — письмо и файл вместе: в одном письме
     # Лавка присылает два файла с одинаковым именем, и журнал по письму потерял бы второй
@@ -232,7 +284,7 @@ class LavkaMailFile(Base):
     filename = Column(String(255), nullable=True)
     received_at = Column(DateTime, nullable=True)   # UTC
     processed_at = Column(DateTime, default=datetime.utcnow)
-    kind = Column(String(20), nullable=True)        # orders | metrics | skipped | error
+    kind = Column(String(20), nullable=True)        # orders | metrics | samokat | skipped | error
     orders_found = Column(Integer, default=0)
     note = Column(Text, nullable=True)
 

@@ -1,7 +1,15 @@
-// Заказы Яндекс.Лавки: период, итоги со сравнением, номенклатура по товарам, лист на производство
+// Заказы Яндекс.Лавки: период, итоги со сравнением, номенклатура по товарам, лист на производство.
+// Тот же скрипт показывает заказы «Самоката»: страница задаёт window.ORDERS_PAGE
+// (свои адреса API, без листа номенклатуры, свои подписи). Без неё — Лавка, как было.
 document.addEventListener('DOMContentLoaded', () => {
     const { esc, api, fmtDate, fmtMoney, toast } = Hub;
     const el = (id) => document.getElementById(id);
+    const cfg = Object.assign({
+        api: '/api/v1/lavka',
+        sheet: true,
+        owner: 'Лавки',                       // «штрих-код Лавки»
+        revisedText: 'Лавка прислала исправленные версии заказов',
+    }, window.ORDERS_PAGE || {});
 
     const content = el('content');
     const notices = el('notices');
@@ -12,7 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let current = null;      // ответ /lavka/summary
     let isAdmin = false;
 
-    LavkaSheet.init();
+    if (cfg.sheet) LavkaSheet.init();
 
     const picker = PeriodPicker.create({
         root: el('periodPicker'),
@@ -52,7 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function loadStatus() {
-        try { showMailStatus(await api('/api/v1/lavka/status')); } catch (err) { mailState.textContent = err.message; }
+        try { showMailStatus(await api(`${cfg.api}/status`)); } catch (err) { mailState.textContent = err.message; }
     }
 
     checkBtn.addEventListener('click', async () => {
@@ -62,7 +70,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const result = await api('/api/v1/lavka/check', { method: 'POST' });
             toast(result.summary, result.ok && !result.errors.length ? 'ok' : 'error');
-            if (result.created || result.revised) { await loadDates(); await loadSummary(); }
+            if (result.created || result.revised || result.samokat_created || result.samokat_revised) { await loadDates(); await loadSummary(); }
         } catch (err) {
             toast(err.message, 'error');
         } finally {
@@ -75,7 +83,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Период и данные ---
 
     async function loadDates() {
-        dates = (await api('/api/v1/lavka/dates')).map(d => d.date);
+        dates = (await api(`${cfg.api}/dates`)).map(d => d.date);
         picker.setMarked(dates);
     }
 
@@ -108,10 +116,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const p = picker.get();
         saveUrl(p);
         content.innerHTML = '<div class="empty-state">Загрузка…</div>';
-        const ordersReq = api(`/api/v1/lavka/orders?start=${p.start}&end=${p.end}`);
+        const ordersReq = api(`${cfg.api}/orders?start=${p.start}&end=${p.end}`);
         ordersReq.catch(() => {});   // ошибку покажет renderOrders
         try {
-            current = await api(`/api/v1/lavka/summary?start=${p.start}&end=${p.end}`);
+            current = await api(`${cfg.api}/summary?start=${p.start}&end=${p.end}`);
             render();
         } catch (err) {
             content.innerHTML = `<div class="empty-state">${esc(err.message)}</div>`;
@@ -241,11 +249,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const n = current.unmatched;
             parts.push(`<div class="lavka-notice">
                 <b>${n} ${plural(n, 'товар', 'товара', 'товаров')} из заказов не ${n === 1 ? 'связан' : 'связаны'} со справочником.</b>
-                ${isAdmin ? 'Нажмите «Связать» у товара: штрих-код Лавки запишется в карточку, и дальше сверка пойдёт сама.' : 'Привязать их может администратор.'}
+                ${isAdmin ? `Нажмите «Связать» у товара: штрих-код ${esc(cfg.owner)} запишется в карточку, и дальше сверка пойдёт сама.` : 'Привязать их может администратор.'}
             </div>`);
         }
         if (current.revised) {
-            parts.push(`<div class="lavka-notice lavka-notice-info">Лавка прислала исправленные версии заказов: ${current.revised}. В таблице уже последняя версия.</div>`);
+            parts.push(`<div class="lavka-notice lavka-notice-info">${esc(cfg.revisedText)}: ${current.revised}. В таблице уже последняя версия.</div>`);
         }
         notices.innerHTML = parts.join('');
     }
@@ -270,7 +278,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function render() {
         renderNotices();
-        const sheetBtn = el('sheetBtn');
+        const sheetBtn = el('sheetBtn') || {};
         if (!current.items.length) {
             el('stats').hidden = true;
             el('compareLabel').hidden = true;
@@ -312,7 +320,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Лист номенклатуры ---
 
-    el('sheetBtn').addEventListener('click', () => {
+    if (cfg.sheet) el('sheetBtn').addEventListener('click', () => {
         if (!current || !current.items.length) return;
         const p = picker.get();
         const a = PeriodPicker.parse(p.start), b = PeriodPicker.parse(p.end);
@@ -358,7 +366,7 @@ document.addEventListener('DOMContentLoaded', () => {
         linkItem = current.items.find(i => i.barcode === barcode);
         if (!linkItem) return;
         el('linkName').textContent = linkItem.name;
-        el('linkBarcode').textContent = `штрих-код Лавки ${linkItem.barcode}`;
+        el('linkBarcode').textContent = `штрих-код ${cfg.owner} ${linkItem.barcode}`;
         linkSearch.value = '';
         linkError.textContent = '';
         suggestions = [];
@@ -380,7 +388,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!body.replace && !body.create_name && /уже/.test(err.message)) {
                 const ok = await Hub.confirmDialog({
                     title: 'Заменить штрих-код?',
-                    text: `${err.message}. Записать код Лавки ${body.barcode} в выбранный товар?`,
+                    text: `${err.message}. Записать код ${cfg.owner} ${body.barcode} в выбранный товар?`,
                     okText: 'Заменить',
                 });
                 return ok ? sendLink({ ...body, replace: true }) : null;
@@ -429,7 +437,7 @@ document.addEventListener('DOMContentLoaded', () => {
     el('linkCreate').addEventListener('click', async () => {
         const ok = await Hub.confirmDialog({
             title: 'Создать товар?',
-            text: `В справочнике появится «${linkItem.name}» со штрих-кодом Лавки ${linkItem.barcode}. Состав и КБЖУ заполните потом в карточке.`,
+            text: `В справочнике появится «${linkItem.name}» со штрих-кодом ${cfg.owner} ${linkItem.barcode}. Состав и КБЖУ заполните потом в карточке.`,
             okText: 'Создать',
             danger: false,
         });
@@ -470,7 +478,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (!dates.length) {
             content.innerHTML = `<div class="empty-state"><h3>Заказов пока нет</h3>Они появятся после проверки почты.</div>`;
-            el('sheetBtn').disabled = true;
+            if (el('sheetBtn')) el('sheetBtn').disabled = true;
             return;
         }
         await loadSummary();

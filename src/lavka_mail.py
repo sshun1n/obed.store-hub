@@ -30,7 +30,7 @@ from email.message import Message
 from email.utils import parseaddr, parsedate_to_datetime
 from typing import Dict, List, Optional, Set, Tuple
 
-from src import database, lavka_reports, secret_box, sheet_sync
+from src import database, lavka_reports, samokat_parser, secret_box, sheet_sync
 from src.lavka_parser import KIND_METRICS, KIND_ORDERS, ParsedOrder, ParseError, detect_kind, parse_orders
 
 logger = logging.getLogger("LavkaMail")
@@ -158,7 +158,8 @@ def fetch_letters(settings: database.MailSettings, since_uid: int, known_ids: Se
     """
     client = _connect(settings)
     try:
-        status, data = client.uid("SEARCH", None, f"UID {since_uid + 1}:*", _from_criteria(senders_of(settings)))
+        senders = senders_of(settings) + [s for s in database.SAMOKAT_SENDERS if s not in senders_of(settings)]
+        status, data = client.uid("SEARCH", None, f"UID {since_uid + 1}:*", _from_criteria(senders))
         if status != "OK":
             raise MailError("Поиск писем не удался")
         # На «UID N:*» сервер отдаёт и последнее письмо, даже если оно старее N
@@ -218,8 +219,13 @@ class ImportResult:
     feedback: int = 0         # новые отзывы из них
     skipped: int = 0
     errors: List[str] = field(default_factory=list)
+    # Заказы «Самоката»: «18.11 Баранова ул, дом 7» — день и точка
+    samokat_created: List[str] = field(default_factory=list)
+    samokat_revised: List[str] = field(default_factory=list)
 
     def add(self, other: "ImportResult") -> None:
+        self.samokat_created += other.samokat_created
+        self.samokat_revised += other.samokat_revised
         self.created += other.created
         self.revised += other.revised
         self.unchanged += other.unchanged
@@ -313,10 +319,13 @@ def import_attachment(db, content: bytes, *, filename: str = "", message_id: str
 
     # Тот же файл байт в байт уже приходил другим письмом
     if db.query(journal).filter(journal.attachment_sha256 == digest,
-                                journal.kind.in_([KIND_ORDERS, KIND_METRICS])).first():
+                                journal.kind.in_([KIND_ORDERS, KIND_METRICS, samokat_parser.KIND_SAMOKAT])).first():
         note("skipped", "такой же файл уже приходил")
         db.commit()
         return ImportResult(skipped=1)
+
+    if samokat_parser.is_samokat(content):
+        return _import_samokat(db, content, filename=filename, message_id=message_id, note=note)
 
     try:
         kind = detect_kind(content)
@@ -359,6 +368,84 @@ def import_attachment(db, content: bytes, *, filename: str = "", message_id: str
         return ImportResult(errors=[f"{filename}: не удалось записать ({exc})"])
 
 
+def _samokat_signature(lines) -> str:
+    parts = sorted(f"{l.barcode}:{l.quantity}:{Decimal(l.sum_gross).quantize(Decimal('0.01'))}" for l in lines)
+    return hashlib.sha256("|".join(parts).encode()).hexdigest()
+
+
+def save_samokat(db, parsed: "samokat_parser.SamokatFile", message_id: str = "", filename: str = "") -> ImportResult:
+    """Заказ «Самоката» по точкам. Ключ — день и точка: тот же день и адрес в новом
+    файле — исправленная версия, строки заменяются. Точки, которых нет в новом
+    файле, не трогаем: прислать могут и дозаказ отдельным файлом."""
+    result = ImportResult()
+    stamp = parsed.delivery_date.strftime("%d.%m")
+    for point_order in parsed.points:
+        key = samokat_parser.point_key(point_order.address)
+        point = db.query(database.SamokatPoint).filter(database.SamokatPoint.key == key).first()
+        if point is None:
+            point = database.SamokatPoint(key=key, address=point_order.address)
+            db.add(point)
+            db.flush()
+        else:
+            point.address = point_order.address
+        order = (db.query(database.SamokatOrder)
+                 .filter(database.SamokatOrder.delivery_date == parsed.delivery_date,
+                         database.SamokatOrder.point_id == point.id).first())
+        label = f"{stamp} {point_order.address}"
+        if order is None:
+            order = database.SamokatOrder(delivery_date=parsed.delivery_date, point_id=point.id)
+            db.add(order)
+            result.samokat_created.append(label)
+        else:
+            if _samokat_signature(order.lines) != _samokat_signature(point_order.lines):
+                order.revised_at = datetime.utcnow()
+                result.samokat_revised.append(label)
+            else:
+                result.unchanged.append(label)
+            order.lines.clear()
+            db.flush()
+        order.order_date = parsed.order_date
+        order.total_quantity = point_order.total_quantity
+        order.total_gross = point_order.total_gross
+        order.source_message_id = message_id or None
+        order.source_filename = filename or None
+        for line in point_order.lines:
+            order.lines.append(database.SamokatOrderLine(
+                barcode=line.barcode, vendor_code=line.vendor_code or None, name=line.name,
+                name_raw=line.name_raw, quantity=line.quantity, price_gross=line.price_gross,
+                sum_gross=line.sum_gross,
+            ))
+        db.flush()
+    return result
+
+
+def _import_samokat(db, content: bytes, *, filename: str, message_id: str, note) -> ImportResult:
+    kind = samokat_parser.KIND_SAMOKAT
+    try:
+        parsed = samokat_parser.parse(content, filename=filename)
+    except ParseError as exc:
+        db.rollback()
+        note("error", f"Самокат, ошибка разбора: {exc}")
+        db.commit()
+        return ImportResult(errors=[f"{filename}: {exc}"])
+    try:
+        result = save_samokat(db, parsed, message_id=message_id, filename=filename)
+        parts = [f"Самокат на {parsed.delivery_date.strftime('%d.%m.%Y')}, точек: {len(parsed.points)}"]
+        if result.samokat_created:
+            parts.append(f"новых заказов: {len(result.samokat_created)}")
+        if result.samokat_revised:
+            parts.append(f"исправлено: {len(result.samokat_revised)}")
+        if result.unchanged:
+            parts.append(f"без изменений: {len(result.unchanged)}")
+        note(kind, ", ".join(parts), len(parsed.points))
+        db.commit()
+        return result
+    except Exception as exc:
+        db.rollback()
+        logger.error(f"Не удалось записать заказ Самоката из {filename}: {exc}", exc_info=True)
+        return ImportResult(errors=[f"{filename}: не удалось записать ({exc})"])
+
+
 def get_settings(db) -> database.MailSettings:
     settings = db.query(database.MailSettings).first()
     if settings is None:
@@ -377,13 +464,18 @@ def _summary(letters: int, result: ImportResult, remaining: int) -> str:
         parts.append(f"новых заказов: {len(result.created)}")
     if result.revised:
         parts.append(f"исправлено: {len(result.revised)}")
+    if result.samokat_created:
+        parts.append(f"новых заказов Самоката: {len(result.samokat_created)}")
+    if result.samokat_revised:
+        parts.append(f"исправлено у Самоката: {len(result.samokat_revised)}")
     if result.metrics:
         parts.append(f"отчётов метрик: {result.metrics}")
     if result.feedback:
         parts.append(f"новых отзывов: {result.feedback}")
     if result.errors:
         parts.append(f"ошибок: {len(result.errors)}")
-    if not (result.created or result.revised or result.errors) and letters:
+    if not (result.created or result.revised or result.samokat_created or result.samokat_revised
+            or result.errors) and letters:
         parts.append("новых заказов нет")
     if remaining:
         parts.append(f"осталось писем: {remaining}")
@@ -429,9 +521,12 @@ def check_mail() -> Dict:
         try:
             summary, remaining, result = _check_locked(db)
             return {"ok": True, "summary": summary, "remaining": remaining,
-                    "created": len(result.created), "revised": len(result.revised), "errors": result.errors}
+                    "created": len(result.created), "revised": len(result.revised),
+                    "samokat_created": len(result.samokat_created), "samokat_revised": len(result.samokat_revised),
+                    "errors": result.errors}
         except MailError as exc:
-            return {"ok": False, "summary": str(exc), "remaining": 0, "created": 0, "revised": 0, "errors": [str(exc)]}
+            return {"ok": False, "summary": str(exc), "remaining": 0, "created": 0, "revised": 0,
+                    "samokat_created": 0, "samokat_revised": 0, "errors": [str(exc)]}
         finally:
             db.close()
 

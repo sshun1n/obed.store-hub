@@ -57,18 +57,21 @@
                 ${link('/', '00', 'Все сервисы')}
                 ${link('/nomenclature', '01', 'Номенклатура')}
                 ${link('/orders', '02', 'Заказы по точкам')}
-                ${isAdmin ? link('/timesheet', '03', 'Учёт времени') : ''}
-                ${isAdmin ? link('/employees', '04', 'Сотрудники', ['/employee']) : ''}
                 <div class="side-caption">Лавка и СБИС</div>
-                ${link('/lavka', '05', 'Заказы Лавки')}
-                ${link('/lavka-reports', '06', 'Отчёты Лавки')}
-                ${link('/lavka-forecast', '07', 'Прогноз')}
-                ${link('/saby', '08', 'СБИС')}
-                ${link('/carriers', '09', 'Перевозчики')}
-                ${link('/entities', '10', 'Юрлица')}
+                ${link('/lavka', '03', 'Заказы Лавки')}
+                ${link('/lavka-reports', '04', 'Отчёты Лавки')}
+                ${link('/lavka-forecast', '05', 'Прогноз')}
+                ${link('/saby', '06', 'СБИС')}
+                <div class="side-caption">Самокат</div>
+                ${link('/samokat', '07', 'Заказы Самоката')}
+                <div class="side-caption">Справочники</div>
+                ${isAdmin ? link('/timesheet', '08', 'Учёт времени') : ''}
+                ${isAdmin ? link('/employees', '09', 'Сотрудники', ['/employee']) : ''}
+                ${link('/carriers', '10', 'Перевозчики')}
+                ${link('/entities', '11', 'Юрлица')}
                 <div class="side-caption">Система</div>
-                ${link('/management', '11', 'Продукция')}
-                ${isAdmin ? link('/admin', '12', 'Админ-панель') : ''}
+                ${link('/management', '12', 'Продукция')}
+                ${isAdmin ? link('/admin', '13', 'Админ-панель') : ''}
             </nav>
             <div class="side-user">
                 ${currentUser ? `

@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Заказы Самоката | OBED.STORE Hub</title>
+    <link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css?v=1.21.0">
+    <link rel="expect" href="#hubEnd" blocking="render">
+</head>
+<body>
+    <script src="/static/components.js?v=1.19.0"></script>
+    <div class="container">
+        <header class="page-header page-head-row">
+            <div>
+                <span class="eyebrow">Самокат</span>
+                <h1>Заказы Самоката</h1>
+                <p class="subtitle">Заказы ООО «Умный ритейл» приходят письмом от ordermanager@samokat.ru, одна таблица на все точки дня, и разбираются сами. Товары сверяются со справочником по штрих-коду.</p>
+            </div>
+            <div class="lavka-mail-bar">
+                <span class="lavka-mail-state" id="mailState"></span>
+                <button type="button" class="btn btn-secondary btn-sm" id="checkBtn">Проверить почту</button>
+            </div>
+        </header>
+
+        <div class="controls-panel lavka-controls">
+            <div class="period-picker" id="periodPicker">
+                <button type="button" class="icon-btn" id="prevPeriod" aria-label="Предыдущий период">‹</button>
+                <button type="button" class="period-btn" id="periodBtn" aria-haspopup="dialog" aria-expanded="false">
+                    <span class="period-kind" id="periodKind">День</span>
+                    <span class="period-label" id="periodLabel">—</span>
+                    <span class="period-caret" aria-hidden="true">▾</span>
+                </button>
+                <button type="button" class="icon-btn" id="nextPeriod" aria-label="Следующий период">›</button>
+                <div class="period-pop" id="periodPop" role="dialog" aria-label="Выбор даты или периода" hidden></div>
+            </div>
+        </div>
+
+        <div class="stats-grid lavka-stats" id="stats" hidden>
+            <div class="stat-card"><span class="stat-label">Заказов</span><span class="stat-value" id="statOrders">—</span><span class="stat-delta" id="dOrders"></span></div>
+            <div class="stat-card"><span class="stat-label">Точек</span><span class="stat-value" id="statPoints">—</span><span class="stat-delta" id="dPoints"></span></div>
+            <div class="stat-card"><span class="stat-label">Штук</span><span class="stat-value" id="statQty">—</span><span class="stat-delta" id="dQty"></span></div>
+            <div class="stat-card"><span class="stat-label">Сумма с НДС</span><span class="stat-value" id="statGross">—</span><span class="stat-delta" id="dGross"></span></div>
+        </div>
+        <p class="lavka-compare" id="compareLabel" hidden></p>
+
+        <div id="notices"></div>
+        <div id="content"><div class="empty-state">Загрузка…</div></div>
+
+        <section class="lavka-orders" id="ordersSection" hidden>
+            <div class="lavka-section-head">
+                <h2 class="card-title-small">Заказы по точкам</h2>
+                <span class="lavka-section-sub" id="ordersSub"></span>
+            </div>
+            <div id="orders"></div>
+        </section>
+    </div>
+
+    <div class="modal" id="linkModal">
+        <div class="modal-content modal-wide link-modal" role="dialog" aria-modal="true" aria-labelledby="linkTitle">
+            <h2 class="card-title-small" id="linkTitle">Связать с товаром</h2>
+            <div class="link-source">
+                <div class="cell-main" id="linkName"></div>
+                <div class="cell-sub mono-cell" id="linkBarcode"></div>
+            </div>
+            <p class="field-hint">Выберите блюдо из справочника: штрих-код Самоката запишется в его карточку, и дальше заказы будут сопоставляться сами.</p>
+            <input type="search" id="linkSearch" class="styled-text-input mail-input" placeholder="Поиск по справочнику…" autocomplete="off">
+            <div class="link-list" id="linkList" role="listbox" aria-label="Товары справочника"></div>
+            <span class="error-msg" id="linkError"></span>
+            <div class="modal-actions link-actions">
+                <button type="button" class="btn btn-secondary" id="linkCreate" title="Если такого блюда в справочнике нет">Создать товар</button>
+                <span class="link-actions-gap"></span>
+                <button type="button" class="btn btn-secondary" id="linkCancel">Отмена</button>
+            </div>
+        </div>
+    </div>
+
+
+    <script src="/static/hub-ui.js?v=1.10.0"></script>
+    <script src="/static/period-picker.js?v=1.19.0"></script>
+    <script>
+        window.ORDERS_PAGE = {
+            api: '/api/v1/samokat',
+            sheet: false,
+            owner: 'Самоката',
+            revisedText: 'Самокат прислал исправленный заказ на этот день, точек',
+        };
+    </script>
+    <script src="/static/lavka.js?v=1.17.1"></script>
+    <div id="hubEnd" hidden></div>
+</body>
+</html>
