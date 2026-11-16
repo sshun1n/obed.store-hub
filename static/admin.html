@@ -175,6 +175,7 @@
                     <label for="pollSenders" class="control-label">Отправители</label>
                     <textarea id="pollSenders" class="styled-text-input mail-input" rows="3" spellcheck="false"></textarea>
                     <span class="field-hint">Адреса через запятую. Письма других отправителей не открываются: в ящике и уведомления СБИС, и чужая переписка.</span>
+                    <span class="field-hint" id="pollSamokat"></span>
                 </div>
                 <span class="field-hint">Время московское. В остальное время почту проверяет кнопка на странице «Заказы Лавки».</span>
                 <span class="error-msg" id="pollSettingsError"></span>
@@ -230,7 +231,7 @@
     <script src="/static/hub-ui.js?v=1.10.0"></script>
     <script src="/static/time-picker.js?v=1.21.0"></script>
     <script src="/static/admin.js?v=1.9.4"></script>
-    <script src="/static/mail-settings.js?v=1.13.0"></script>
+    <script src="/static/mail-settings.js?v=1.13.1"></script>
     <div id="hubEnd" hidden></div>
 </body>
 </html>

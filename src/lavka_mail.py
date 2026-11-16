@@ -583,6 +583,7 @@ def get_status(db) -> Dict:
         "running": _lock.locked(),
         "history": dict(_history),
         "senders": senders_of(settings),
+        "samokat_senders": list(database.SAMOKAT_SENDERS),   # читаются всегда, в форме не правятся
         "auto": {
             "enabled": bool(settings.enabled),
             "interval_minutes": settings.interval_minutes or 30,

@@ -228,6 +228,9 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('pollStart').value = auto.start_time;
         document.getElementById('pollEnd').value = auto.end_time;
         document.getElementById('pollSenders').value = poll.senders.join(', ');
+        const samokat = poll.samokat_senders || [];
+        document.getElementById('pollSamokat').textContent = samokat.length
+            ? `Заказы Самоката читаются всегда, отдельно от этого списка: ${samokat.join(', ')}.` : '';
         pollError.textContent = '';
         Hub.openModal(pollModal);
     });
