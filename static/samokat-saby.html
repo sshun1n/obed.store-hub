@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>СБИС Самоката | OBED.STORE Hub</title>
+    <link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css?v=1.24.0">
+    <link rel="expect" href="#hubEnd" blocking="render">
+    <style>
+        .samokat-steps { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        @media (max-width: 1100px) { .samokat-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+        @media (max-width: 640px) { .samokat-steps { grid-template-columns: 1fr; } }
+        #result .lavka-notice { margin-bottom: 12px; }
+        .samokat-list { margin: 6px 0 0; padding-left: 18px; max-height: 260px; overflow-y: auto; }
+        .samokat-row-btn { white-space: nowrap; }
+    </style>
+</head>
+<body>
+    <script src="/static/components.js?v=1.20.0"></script>
+    <div class="container">
+        <header class="page-header">
+            <span class="eyebrow">Самокат</span>
+            <h1>СБИС Самоката</h1>
+            <p class="subtitle">Документы по заказам ООО «Умный ритейл» за день поставки: реестр 1С, реализации с УПД, подпись и ЭТрН. Сейчас создаются только черновики, ничего не отправляется.</p>
+        </header>
+
+        <div class="controls-panel lavka-controls">
+            <div class="period-picker" id="periodPicker">
+                <button type="button" class="icon-btn" id="prevPeriod" aria-label="Предыдущая поставка">‹</button>
+                <button type="button" class="period-btn" id="periodBtn" aria-haspopup="dialog" aria-expanded="false">
+                    <span class="period-kind" id="periodKind">День</span>
+                    <span class="period-label" id="periodLabel">—</span>
+                    <span class="period-caret" aria-hidden="true">▾</span>
+                </button>
+                <button type="button" class="icon-btn" id="nextPeriod" aria-label="Следующая поставка">›</button>
+                <div class="period-pop" id="periodPop" role="dialog" aria-label="Выбор дня поставки" hidden></div>
+            </div>
+            <div class="lavka-actions saby-actions">
+                <span class="lavka-mail-state" id="taskState"></span>
+            </div>
+        </div>
+        <input type="file" id="registryInput" accept=".xls" hidden>
+
+        <div id="result"></div>
+        <div id="content"><div class="empty-state">Загрузка…</div></div>
+    </div>
+
+    <script src="/static/hub-ui.js?v=1.10.0"></script>
+    <script src="/static/period-picker.js?v=1.19.0"></script>
+    <script src="/static/samokat-saby.js?v=1.0.0"></script>
+    <div id="hubEnd" hidden></div>
+</body>
+</html>

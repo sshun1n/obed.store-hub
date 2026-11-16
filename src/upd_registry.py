@@ -96,9 +96,17 @@ COMMON = {"область", "обл", "город", "нижний", "новго�
           "набережная", "проезд", "корпус", "квартал", "нижегородская"}
 
 
+# «Спутника 11 в» в 1С и «Спутника ул, дом 11В» в заказе — один дом
+LETTER_RE = re.compile(r"(\d)\s+([а-я])(?![а-я])", re.IGNORECASE)
+# «6 мкр дом 21» и «6-й мкр, дом 21»: «мкр» короче четырёх букв и иначе не считается словом
+DISTRICT_RE = re.compile(r"\b(?:мкр|микрорайон)[а-я]*\.?", re.IGNORECASE)
+
+
 def _fingerprint(address: str):
     text = (address or "").lower().replace("ё", "е")
     text = INDEX_RE.sub(" ", text)
+    text = DISTRICT_RE.sub(" микрорайон ", text)
+    text = LETTER_RE.sub(r"\1\2", text)
     text = HOUSE_PREFIX_RE.sub(" ", text)
     text = CORPUS_RE.sub(r"\1-\2", text)
     house = "-".join(HOUSE_RE.findall(text))

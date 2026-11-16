@@ -10,16 +10,9 @@
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css?v=1.21.0">
     <link rel="expect" href="#hubEnd" blocking="render">
-    <style>
-        .samokat-saby { margin: 0 0 20px; padding: 18px 20px; }
-        .samokat-saby .field-hint { display: block; margin: 6px 0 12px; }
-        .samokat-saby-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-        #sabyResult .lavka-notice { margin-top: 12px; }
-        .samokat-list { margin: 6px 0 0; padding-left: 18px; max-height: 260px; overflow-y: auto; }
-    </style>
 </head>
 <body>
-    <script src="/static/components.js?v=1.19.0"></script>
+    <script src="/static/components.js?v=1.20.0"></script>
     <div class="container">
         <header class="page-header page-head-row">
             <div>
@@ -54,19 +47,6 @@
         </div>
         <p class="lavka-compare" id="compareLabel" hidden></p>
 
-        <section class="card samokat-saby" id="sabyPanel" hidden>
-            <div class="lavka-section-head">
-                <h2 class="card-title-small">СБИС: реализации и УПД</h2>
-                <span class="lavka-section-sub">только черновики, без отправки</span>
-            </div>
-            <p class="field-hint">По заказам Самоката в СБИС на выбранный день: реализация на основании заказа, номер из реестра 1С по адресу точки, УПД с полями Самоката (GLN, номер заказа, договор, штрих-код и код покупателя). «Проверить» собирает УПД и показывает ошибки, ничего не создавая.</p>
-            <div class="samokat-saby-bar">
-                <button type="button" class="btn btn-secondary btn-sm" id="sabyCheck">Проверить без создания</button>
-                <button type="button" class="btn btn-primary btn-sm" id="sabyCreate">Создать черновики</button>
-                <span class="lavka-mail-state" id="sabyState"></span>
-            </div>
-            <div id="sabyResult"></div>
-        </section>
 
         <div id="notices"></div>
         <div id="content"><div class="empty-state">Загрузка…</div></div>
@@ -111,7 +91,6 @@
         };
     </script>
     <script src="/static/lavka.js?v=1.17.1"></script>
-    <script src="/static/samokat.js?v=1.0.0"></script>
     <div id="hubEnd" hidden></div>
 </body>
 </html>

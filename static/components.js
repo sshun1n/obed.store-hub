@@ -64,14 +64,15 @@
                 ${link('/saby', '06', 'СБИС')}
                 <div class="side-caption">Самокат</div>
                 ${link('/samokat', '07', 'Заказы Самоката')}
+                ${link('/samokat-saby', '08', 'СБИС Самоката')}
                 <div class="side-caption">Справочники</div>
-                ${isAdmin ? link('/timesheet', '08', 'Учёт времени') : ''}
-                ${isAdmin ? link('/employees', '09', 'Сотрудники', ['/employee']) : ''}
-                ${link('/carriers', '10', 'Перевозчики')}
-                ${link('/entities', '11', 'Юрлица')}
+                ${isAdmin ? link('/timesheet', '09', 'Учёт времени') : ''}
+                ${isAdmin ? link('/employees', '10', 'Сотрудники', ['/employee']) : ''}
+                ${link('/carriers', '11', 'Перевозчики')}
+                ${link('/entities', '12', 'Юрлица')}
                 <div class="side-caption">Система</div>
-                ${link('/management', '12', 'Продукция')}
-                ${isAdmin ? link('/admin', '13', 'Админ-панель') : ''}
+                ${link('/management', '13', 'Продукция')}
+                ${isAdmin ? link('/admin', '14', 'Админ-панель') : ''}
             </nav>
             <div class="side-user">
                 ${currentUser ? `

@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from src import auth, database, lavka_mail, saby_client, samokat_saby
+from src import auth, database, lavka_mail, saby_client, samokat_saby, upd_registry
 from src.api_lavka import _money, compare_range, format_range, short_address, sort_key
 from src.api_v1 import product_title
 from src.database import get_db
@@ -127,6 +127,39 @@ def samokat_orders(start: date, end: date, db: Session = Depends(get_db), user=D
         })
     result.sort(key=lambda r: (r["delivery_date"], r["address_short"].lower()))
     return result
+
+
+# --- СБИС Самоката: день поставки по точкам ---
+
+@router.get("/day")
+def samokat_day(day: date, db: Session = Depends(get_db), user=Depends(auth.get_current_user)):
+    """Точки дня из базы (без похода в СБИС): заказ УР-, строка реестра 1С по адресу, наша реализация."""
+    rows = (db.query(Order).options(joinedload(Order.point))
+            .filter(Order.delivery_date == day).all())
+    rows.sort(key=lambda o: short_address(o.point.address if o.point else "").lower())
+    registry = db.query(database.UpdRow).filter(database.UpdRow.day == day).order_by(database.UpdRow.number).all()
+    used, points = set(), []
+    for o in rows:
+        address = o.point.address if o.point else ""
+        row = next((r for r in registry if r.id not in used and upd_registry.same_address(address, r.address or "")), None)
+        if row is not None:
+            used.add(row.id)
+        gross = _money(o.total_gross)
+        points.append({
+            "id": o.id, "order_no": o.order_no or "", "address": address, "address_short": short_address(address),
+            "gln": o.point.gln if o.point else None, "quantity": int(o.total_quantity or 0), "gross": gross,
+            "registry": {"number": row.number, "amount": _money(row.amount), "ok": abs(_money(row.amount) - gross) < 1}
+            if row is not None else None,
+            "shipment": {"number": o.shipment_number, "state": o.shipment_state or "Черновик"} if o.shipment_number else None,
+        })
+    return {
+        "day": day.isoformat(), "is_admin": user.role == "admin", "registry_rows": len(registry),
+        "registry_free": [{"number": r.number, "address": r.address} for r in registry if r.id not in used],
+        "stats": {"points": len(points), "registry": sum(1 for p in points if p["registry"]),
+                  "orders": sum(1 for p in points if p["order_no"]),
+                  "shipments": sum(1 for p in points if p["shipment"])},
+        "points": points,
+    }
 
 
 # --- СБИС: черновики реализаций с УПД ---
