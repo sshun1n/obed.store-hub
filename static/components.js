@@ -66,12 +66,12 @@
                 ${link('/samokat', '07', 'Заказы')}
                 ${link('/samokat-saby', '08', 'СБИС')}
                 <div class="side-caption">Справочники</div>
-                ${isAdmin ? link('/timesheet', '09', 'Учёт времени') : ''}
-                ${isAdmin ? link('/employees', '10', 'Сотрудники', ['/employee']) : ''}
-                ${link('/carriers', '11', 'Перевозчики')}
-                ${link('/entities', '12', 'Юрлица')}
+                ${link('/management', '09', 'Продукция')}
+                ${isAdmin ? link('/timesheet', '10', 'Учёт времени') : ''}
+                ${isAdmin ? link('/employees', '11', 'Сотрудники', ['/employee']) : ''}
+                ${link('/carriers', '12', 'Перевозчики')}
+                ${link('/entities', '13', 'Юрлица')}
                 <div class="side-caption">Система</div>
-                ${link('/management', '13', 'Продукция')}
                 ${isAdmin ? link('/admin', '14', 'Админ-панель') : ''}
             </nav>
             <div class="side-user">
