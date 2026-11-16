@@ -81,8 +81,8 @@ def _check_order(order: database.SamokatOrder) -> Optional[str]:
         return f"номер заказа «{order.order_no}» не по маске УР- и 8 цифр"
     if not order.point or not order.point.gln:
         return "нет GLN точки — «Обновить из СБИС», он берётся из заказа"
-    if not order.point.address:
-        return "нет адреса точки"
+    if not order.point.order_address:
+        return "нет адреса точки из заказа — «Обновить из СБИС»"
     return None
 
 
@@ -167,7 +167,7 @@ def waybill_payload(s, own, buyer: database.LegalEntity, carrier, order: databas
     info["СвГруз"]["ОпГруз"][0].update({"ДрОГруз": order.order_no, "УчГосСист": "0", "Марк": "Отсутствует"})
     # 1.2: место доставки — GLN и адрес точки из ORDERS
     info["СвГП"]["АдресДостГр"] = {"ГЛН": order.point.gln,
-                                    "АдресИнф": {"АдрТекст": order.point.address, "КодСтр": "643"}}
+                                    "АдресИнф": {"АдрТекст": order.point.order_address, "КодСтр": "643"}}
     return payload
 
 

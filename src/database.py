@@ -231,6 +231,7 @@ class SamokatPoint(Base):
     key = Column(String(300), unique=True, nullable=False)   # адрес без индекса, регистра и знаков
     address = Column(String(300), nullable=False)            # как в последнем файле
     gln = Column(String(13), nullable=True)                  # из ORDERS в СБИС, когда свяжем
+    order_address = Column(String(400), nullable=True)       # адрес точки из ORDERS — для ЭТрН (АдресДостГр)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class SamokatOrder(Base):

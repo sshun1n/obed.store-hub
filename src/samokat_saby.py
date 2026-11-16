@@ -204,6 +204,8 @@ def _link_order(db, day: date, address: str, gln: str, order_no: str, saby_id: s
         return None
     if gln and point.gln != gln:
         point.gln = gln
+    if address and point.order_address != address:
+        point.order_address = address[:400]
     order = (db.query(database.SamokatOrder)
              .filter(database.SamokatOrder.delivery_date == day, database.SamokatOrder.point_id == point.id).first())
     if order is not None:
@@ -238,16 +240,17 @@ def refresh_day(day: date, step: Callable = _step) -> Dict:
         step("Список заказов Самоката")
         items = _day_items(sid, day)
         linked = _linked(db, day)
-        # Файл заказа нужен, только чтобы впервые связать заказ с точкой из письма
-        orders = _read_orders(sid, items, day, step, lambda item: _number(item) not in linked)
+        # Файл заказа нужен, чтобы впервые связать заказ с точкой из письма и запомнить GLN и адрес из ORDERS
+        orders = _read_orders(sid, items, day, step, lambda item: _number(item) not in linked or not (
+            linked[_number(item)].point and linked[_number(item)].point.order_address and linked[_number(item)].point.gln))
         store = saby_sync._Store(db, day)
         links: Dict[str, dict] = {}
         for item, card, xml in orders:
             number = _number(item)
             ours = linked.get(number)
-            if ours is None and xml:
+            if xml:
                 address, gln, _ = _point_of(xml)
-                ours = _link_order(db, day, address, gln, number, item["Идентификатор"])
+                ours = _link_order(db, day, address, gln, number, item["Идентификатор"]) or ours
                 if ours is not None:
                     linked[number] = ours
             store.put(item["Идентификатор"], ORDER_KIND, item, order_no=number, ours=ours is not None,
