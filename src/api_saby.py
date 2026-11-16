@@ -39,6 +39,21 @@ def saby_status(user=Depends(auth.get_current_user)):
     return {"configured": saby_client.configured(), "progress": saby_sync.progress()}
 
 
+def _task(source: str, page: str, p: Dict) -> Dict:
+    result = p.get("result") or {}
+    return {**p, "source": source, "page": page,
+            "counts": {"done": len(result.get("done") or []), "errors": len(result.get("errors") or {}),
+                       "skipped": len(result.get("skipped") or [])}}
+
+
+@router.get("/tasks")
+def saby_tasks(user=Depends(auth.get_current_user)):
+    """Операции с кабинетом для окошка хода: Лавка и Самокат. Видят все — это только ход."""
+    from src import samokat_saby
+    return {"tasks": [_task("lavka", "/saby", saby_sync.progress()),
+                      _task("samokat", "/samokat-saby", samokat_saby.progress())]}
+
+
 @router.post("/refresh")
 def saby_refresh(day: date, user=Depends(auth.get_current_user)):
     """Прочитать кабинет за день. Только чтение, поэтому кнопка доступна всем."""
@@ -105,7 +120,7 @@ def saby_day(day: date, db: Session = Depends(get_db), user=Depends(auth.get_cur
     transport = [{**_doc(d), "party": d.party, "cargo": d.cargo,
                   "waybills": sum(1 for w in docs if w.kind == "waybill" and w.parent_id == d.saby_id)}
                  for d in docs if d.kind == "transport" and d.ours]
-    checked = max((d.checked_at for d in docs), default=None)
+    checked = max((d.checked_at for d in docs if not d.kind.startswith("sm_")), default=None)
     ours_transport = next((d for d in sorted(docs, key=lambda x: -x.id)
                            if d.kind == "transport" and d.ours and d.state != "Удалён"), None)
     waiting = ours_transport is not None and ours_transport in saby_actions.waiting_transports(db)
@@ -253,8 +268,11 @@ class ActionIn(BaseModel):
     carrier_id: Optional[int] = None
 
 
+KINDS = {"create_shipments": "shipment", "process_shipments": "shipment", "create_waybills": "waybill"}
+
+
 @router.post("/action")
-def saby_action(data: ActionIn, admin=Depends(auth.admin_only)):
+def saby_action(data: ActionIn, db: Session = Depends(get_db), admin=Depends(auth.admin_only)):
     """Действие в кабинете — фоном, с ходом выполнения в /status. Только админ, только по кнопке."""
     if data.action not in LABELS:
         raise HTTPException(status_code=400, detail="Неизвестное действие")
@@ -271,7 +289,9 @@ def saby_action(data: ActionIn, admin=Depends(auth.admin_only)):
         task = lambda: saby_actions.process_shipments(data.day, data.orders, who)
     else:
         task = lambda: saby_actions.create_waybills(data.day, data.orders, who)
-    if not saby_sync.start(data.day, LABELS[data.action], task):
+    orders = data.orders or [o.order_no for o in db.query(database.LavkaOrder)
+                             .filter(database.LavkaOrder.delivery_date == data.day)]
+    if not saby_sync.start(data.day, LABELS[data.action], task, kind=KINDS.get(data.action, ""), orders=orders):
         raise HTTPException(status_code=409, detail="Другая операция с СБИС ещё идёт, дождитесь её окончания")
     return {"started": True}
 
@@ -295,7 +315,7 @@ class SignSendIn(BaseModel):
 
 @router.post("/sign/prepare")
 def saby_sign_prepare(data: SignPrepareIn, admin=Depends(auth.admin_only)):
-    if saby_sync.progress()["running"]:
+    if saby_sync.busy():
         raise HTTPException(status_code=409, detail="Идёт другая операция с СБИС, дождитесь её окончания")
     try:
         return saby_actions.prepare_signing(data.day, data.kind, data.orders, data.thumbprint)

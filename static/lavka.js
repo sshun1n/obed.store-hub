@@ -1,6 +1,6 @@
 // Заказы Яндекс.Лавки: период, итоги со сравнением, номенклатура по товарам, лист на производство.
 // Тот же скрипт показывает заказы «Самоката»: страница задаёт window.ORDERS_PAGE
-// (свои адреса API, без листа номенклатуры, свои подписи). Без неё — Лавка, как было.
+// (свои адреса API, свои подписи и заголовок листа). Без неё — Лавка, как было.
 document.addEventListener('DOMContentLoaded', () => {
     const { esc, api, fmtDate, fmtMoney, toast } = Hub;
     const el = (id) => document.getElementById(id);
@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
         api: '/api/v1/lavka',
         sheet: true,
         owner: 'Лавки',                       // «штрих-код Лавки»
+        brand: 'Яндекс',                      // заголовок листа номенклатуры
         revisedText: 'Лавка прислала исправленные версии заказов',
     }, window.ORDERS_PAGE || {});
 
@@ -326,9 +327,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const a = PeriodPicker.parse(p.start), b = PeriodPicker.parse(p.end);
         const short = (d) => `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`;
         const label = p.start === p.end
-            ? `Яндекс ${short(a)}.${String(a.getFullYear()).slice(2)}`
-            : `Яндекс ${short(a)}–${short(b)}.${String(b.getFullYear()).slice(2)}`;
-        LavkaSheet.open({ start: p.start, end: p.end, label, quantity: fmtInt(current.totals.quantity) });
+            ? `${cfg.brand} ${short(a)}.${String(a.getFullYear()).slice(2)}`
+            : `${cfg.brand} ${short(a)}–${short(b)}.${String(b.getFullYear()).slice(2)}`;
+        LavkaSheet.open({ start: p.start, end: p.end, label, quantity: fmtInt(current.totals.quantity), api: cfg.api });
     });
 
     // --- Привязка штрих-кода Лавки к товару (админ) ---

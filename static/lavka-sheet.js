@@ -7,7 +7,7 @@ window.LavkaSheet = (() => {
     const SHEET_W = 297 * 96 / 25.4;            // A4 альбомный в CSS-пикселях
     const SHEET_H = 210 * 96 / 25.4;
     let modal, box, frame, stage, sort, title, printBtn;
-    let period = null;      // { start, end, label, quantity }
+    let period = null;      // { start, end, label, quantity, api }
     let sortsLoaded = false;
 
     function saved() {
@@ -46,12 +46,15 @@ window.LavkaSheet = (() => {
     function load() {
         stage.classList.add('loading');
         frame.onload = () => stage.classList.remove('loading');
-        frame.src = `/api/v1/lavka/sheet.html?${query()}`;
+        frame.src = `${base()}/sheet.html?${query()}`;
     }
+
+    // Лавка и Самокат: лист один, позиции — из своих заказов
+    const base = () => (period && period.api) || '/api/v1/lavka';
 
     async function loadSorts() {
         if (sortsLoaded) return;
-        const sorts = await Hub.api('/api/v1/lavka/sheet/sorts');
+        const sorts = await Hub.api(`${base()}/sheet/sorts`);
         sort.innerHTML = sorts.map(s => `<option value="${s.value}">${Hub.esc(s.label)}</option>`).join('');
         const remembered = saved();
         if (remembered && sorts.some(s => s.value === remembered)) sort.value = remembered;
@@ -64,7 +67,7 @@ window.LavkaSheet = (() => {
         printBtn.disabled = true;
         const text = printBtn.textContent;
         printBtn.textContent = 'Готовлю PDF…';
-        const url = `/api/v1/lavka/sheet.pdf?${query()}`;
+        const url = `${base()}/sheet.pdf?${query()}`;
         try {
             const r = await fetch(url);
             if (!r.ok) {

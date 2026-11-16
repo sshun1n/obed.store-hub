@@ -20,10 +20,14 @@ import base64
 import json
 import os
 import re
-import urllib.error
+import threading
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
-from typing import Dict, Iterator, List, Optional
+from typing import Callable, Dict, Iterator, List, Optional
+
+import requests
+from requests.adapters import HTTPAdapter
 
 AUTH_URL = "https://online.sbis.ru/auth/service/"
 TMS_URL = "https://tms.saby.ru/service/"
@@ -37,6 +41,9 @@ WAYBILL_TYPE = "ConsignmentNote"   # ЭТрН
 
 FINISHED = {"Выполнение завершено успешно", "Выполнение завершено с проблемами"}
 PAGE = 50
+WORKERS = 6     # одновременных чтений: 30 карточек за 1,5 с вместо 8 с, Saby не возражает
+
+_local = threading.local()
 
 ORDERS_RE = re.compile(r'<ТекстИнф[^>]*Значение="([^"]*)"[^>]*Идентиф="ORDERS"|<ТекстИнф[^>]*Идентиф="ORDERS"[^>]*Значение="([^"]*)"')
 CARGO_RE = re.compile(r'НаимГруз="([^"]*)"')
@@ -51,29 +58,65 @@ def configured() -> bool:
     return bool(os.getenv("SABY_LOGIN") and os.getenv("SABY_PASSWORD"))
 
 
+def _http() -> requests.Session:
+    """Своё соединение у каждого потока: TLS-рукопожатие одно на поток, а не на каждый вызов."""
+    session = getattr(_local, "session", None)
+    if session is None:
+        session = requests.Session()
+        session.mount("https://", HTTPAdapter(pool_connections=4, pool_maxsize=4))
+        _local.session = session
+    return session
+
+
 def _post(url: str, method: str, params: dict, sid: str = "") -> dict:
     body = json.dumps({"jsonrpc": "2.0", "method": method, "params": params, "id": 0},
                       ensure_ascii=False).encode("utf-8")
     headers = {"Content-Type": "application/json; charset=utf-8"}
     if sid:
         headers[SESSION_HEADER] = sid
-    request = urllib.request.Request(url, data=body, headers=headers, method="POST")
     try:
-        with urllib.request.urlopen(request, timeout=40) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        raw = exc.read().decode("utf-8", errors="replace")
-        try:
-            payload = json.loads(raw)
-        except json.JSONDecodeError:
-            raise SabyError(f"HTTP {exc.code}: {raw[:300]}") from exc
+        response = _http().post(url, data=body, headers=headers, timeout=40)
     except Exception as exc:
         raise SabyError(f"Не удалось связаться с Saby: {exc}") from exc
+    try:
+        payload = json.loads(response.content.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise SabyError(f"HTTP {response.status_code}: {response.text[:300]}") from exc
     if "error" in payload:
         error = payload["error"]
         details = (error.get("data") or {}).get("details") or ""
         raise SabyError(f"{error.get('message', '')} {details}".strip() or "Saby вернула ошибку")
+    if response.status_code >= 400:
+        raise SabyError(f"HTTP {response.status_code}: {response.text[:300]}")
     return payload.get("result")
+
+
+def pmap(fn: Callable, items: list, on_done: Optional[Callable[[int, int], None]] = None) -> list:
+    """fn по каждому элементу в несколько потоков, результаты в том же порядке.
+
+    Только для чтения: запись документов идёт по одному, чтобы ошибка одной
+    точки не перемешивалась с другими. Исключение элемента возвращается на его
+    месте, а не прерывает остальные — решает вызывающий.
+    """
+    if not items:
+        return []
+    out: list = [None] * len(items)
+    done = [0]
+    lock = threading.Lock()
+
+    def run(index):
+        try:
+            out[index] = fn(items[index])
+        except Exception as exc:     # noqa: BLE001 — отдаём вызывающему как есть
+            out[index] = exc
+        with lock:
+            done[0] += 1
+            if on_done:
+                on_done(done[0], len(items))
+
+    with ThreadPoolExecutor(max_workers=min(WORKERS, len(items)), thread_name_prefix="saby-read") as pool:
+        list(pool.map(run, range(len(items))))
+    return out
 
 
 def login() -> str:
@@ -132,10 +175,10 @@ def read_card(sid: str, url: str, ident: str, kind: str, state: str = "") -> dic
 
 
 def download(sid: str, link: str) -> str:
-    request = urllib.request.Request(link, headers={SESSION_HEADER: sid})
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            return response.read().decode("cp1251", errors="replace")
+        response = _http().get(link, headers={SESSION_HEADER: sid}, timeout=30)
+        response.raise_for_status()
+        return response.content.decode("cp1251", errors="replace")
     except Exception as exc:
         raise SabyError(f"Не скачался файл документа: {exc}") from exc
 

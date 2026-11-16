@@ -223,9 +223,9 @@ document.addEventListener('DOMContentLoaded', () => {
                             <div title="${esc(p.address || '')}">${esc(p.address_short || p.point)}</div>
                             <div class="saby-sub">${esc(p.order_no)} · ${fmtInt(p.quantity)} шт · ${kg(p.weight_kg)} · ${fmtMoney(p.gross)}</div>
                         </td>
-                        <td>${shipmentCell(p)}</td>
-                        <td>${waybillCell(p.waybill)}</td>
-                        <td>${updCell(p.shipment)}</td>
+                        <td data-col="shipment"><div class="cell-main">${shipmentCell(p)}</div></td>
+                        <td data-col="waybill"><div class="cell-main">${waybillCell(p.waybill)}</div></td>
+                        <td data-col="upd"><div class="cell-main">${updCell(p.shipment)}</div></td>
                     </tr>`).join('')}
                 </tbody>
             </table>
@@ -255,6 +255,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         content.innerHTML = renderSteps() + renderTable();
+        if (window.SabyTask) SabyTask.decorate(content, SabyTask.get('lavka'), day());
     }
 
     // --- Загрузка и операции ---
@@ -265,6 +266,7 @@ document.addEventListener('DOMContentLoaded', () => {
             data = await api(`/api/v1/saby/day?day=${day()}`);
             if (selecting) selected = new Set([...selected].filter(o => data.points.some(p => p.order_no === o)));
             render();
+            if (finished) { SabyTask.flash(content, finished, day()); finished = null; }
             if (!polling) stateEl.textContent = data.checked_at ? `Прочитано ${timeText(data.checked_at)}` : '';
         } catch (err) {
             content.innerHTML = `<div class="empty-state">${esc(err.message)}</div>`;
@@ -276,26 +278,25 @@ document.addEventListener('DOMContentLoaded', () => {
         content.querySelectorAll('[data-act]').forEach(b => { if (busy) b.disabled = true; });
         content.classList.toggle('saby-busy', busy);
         if (busy) stateEl.innerHTML = `<span class="lavka-busy">${esc(text || 'Работаю с СБИС…')}</span>`;
+        else if (data) stateEl.textContent = data.checked_at ? `Прочитано ${timeText(data.checked_at)}` : '';
     }
 
-    // Ждём фоновую операцию до конца; результат — то, что вернуло действие
-    function waitTask() {
-        return new Promise((resolve) => {
-            const tick = async () => {
-                try {
-                    const st = await api('/api/v1/saby/status');
-                    const p = st.progress;
-                    if (p.running) { setBusy(true, `${p.label ? p.label + ': ' : ''}${p.step || ''}`); polling = setTimeout(tick, 1200); return; }
-                    polling = null;
-                    resolve(p);
-                } catch { polling = setTimeout(tick, 2500); }
-            };
-            tick();
-        });
+    // Ждём фоновую операцию до конца; результат — то, что вернуло действие.
+    // Ход показывает окошко СБИС в углу, а ячейки строк — над какой точкой работа
+    async function waitTask() {
+        polling = true;
+        const p = await SabyTask.wait('lavka');
+        polling = null;
+        // Последнее состояние точек — в ячейках, пока таблица не перерисована
+        SabyTask.decorate(content, { ...p, running: true }, day());
+        finished = p;
+        return p;
     }
+    let finished = null;     // только что закончившаяся операция: её ячейки проявятся после перерисовки
 
     async function runTask(body) {
         await api('/api/v1/saby/action', { method: 'POST', body: { day: day(), orders: ordersParam(), ...body } });
+        SabyTask.poke();
         setBusy(true, 'Начинаю…');
         const p = await waitTask();
         lastResult = p.result;
@@ -429,7 +430,8 @@ document.addEventListener('DOMContentLoaded', () => {
     refreshBtn.addEventListener('click', async () => {
         try {
             await api(`/api/v1/saby/refresh?day=${day()}`, { method: 'POST' });
-            setBusy(true, 'Вход в СБИС');
+            SabyTask.poke();
+            setBusy(true, 'Читаю кабинет');
             const p = await waitTask();
             if (p.error) toast(p.error, 'error'); else toast('Кабинет прочитан');
             setBusy(false);
@@ -515,6 +517,20 @@ document.addEventListener('DOMContentLoaded', () => {
             toast('Настройки сохранены');
             await load();
         } catch (err) { el('settingsError').textContent = err.message; }
+    });
+
+    // Ход операции — в ячейках строк этого дня; шаги приглушены, пока она идёт
+    SabyTask.onUpdate((tasks) => {
+        const t = tasks.find(x => x.source === 'lavka');
+        if (!data || !t) return;
+        if (t.running) {
+            if (t.day === day()) SabyTask.decorate(content, t, day());
+            if (!content.classList.contains('saby-busy')) setBusy(true, t.label);
+        } else if (!polling && content.classList.contains('saby-busy')) {
+            // Операция, запущенная не с этой страницы (автообновление, другой человек), кончилась
+            setBusy(false);
+            load();
+        }
     });
 
     (async () => {

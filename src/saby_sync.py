@@ -30,11 +30,29 @@ ORDER_LOOKBACK_DAYS = 14   # заказ в СБИС датирован днём,
 
 _lock = threading.Lock()
 _progress: Dict = {"running": False, "day": None, "label": "", "step": "", "done": 0, "total": 0,
-                   "error": None, "result": None, "finished_at": None}
+                   "error": None, "result": None, "finished_at": None, "kind": "", "rows": {}}
 
 
 def progress() -> Dict:
-    return dict(_progress)
+    out = dict(_progress)
+    out["rows"] = dict(_progress.get("rows") or {})
+    return out
+
+
+# --- Ход по точкам: страница рисует его в ячейке своей строки ---
+# kind — колонка, над которой идёт работа (shipment, waybill, order), rows — номер
+# заказа → {"s": wait | work | ok | skip | error, "t": пояснение}
+
+def track(prog: Dict, kind: str, orders) -> None:
+    prog["kind"] = kind
+    prog["rows"] = {o: {"s": "wait", "t": ""} for o in orders if o}
+
+
+def row(prog: Dict, order_no: str, state: str, text: str = "") -> None:
+    if order_no and prog.get("kind"):
+        rows = dict(prog.get("rows") or {})
+        rows[order_no] = {"s": state, "t": text[:200]}
+        prog["rows"] = rows      # целиком: читатель в другом потоке не увидит словарь на полпути
 
 
 def _step(text: str, done: Optional[int] = None, total: Optional[int] = None) -> None:
@@ -117,16 +135,21 @@ def _orders(sid: str, store: _Store, ours: Set[str]) -> Dict[str, dict]:
                 break
 
     links: Dict[str, dict] = {}
-    total = len(found)
-    for i, (number, item) in enumerate(sorted(found.items()), start=1):
-        _step(f"Читаю заказы Лавки: {i} из {total}", i, total)
+    todo = []
+    for number, item in sorted(found.items()):
         cached = store.get(item["Идентификатор"])
         known = [d for d in store.rows.values() if d.kind == "shipment" and d.parent_id == item["Идентификатор"]]
         if _finished(cached) and known:
             links[number] = {"id": known[0].saby_id, "number": known[0].number, "date": ""}
             store.put(item["Идентификатор"], "order", item, order_no=number)
-            continue
-        card = sc.read_card(sid, sc.DOCS_URL, item["Идентификатор"], sc.ORDER_TYPE)
+        else:
+            todo.append((number, item))
+    # Карточки — в несколько потоков, а в базу пишет только этот поток
+    cards = sc.pmap(lambda pair: sc.read_card(sid, sc.DOCS_URL, pair[1]["Идентификатор"], sc.ORDER_TYPE), todo,
+                    lambda i, n: _step(f"Читаю заказы Лавки: {i} из {n}", i, n))
+    for (number, item), card in zip(todo, cards):
+        if isinstance(card, Exception):
+            raise card
         store.put(item["Идентификатор"], "order", item, order_no=number, read_at=datetime.utcnow())
         shipments = sc.consequences(card, sc.SHIPMENT_TYPE)
         if shipments:
@@ -176,21 +199,29 @@ def _transport(sid: str, store: _Store, ours: Set[str]) -> None:
 
     waybills = list(sc.list_documents(sid, sc.TMS_URL, sc.WAYBILL_TYPE, start=store.day, end=store.day))
     todo = [w for w in waybills if w["Идентификатор"] not in foreign_waybills]
-    for i, item in enumerate(todo, start=1):
-        _step(f"Читаю ЭТрН: {i} из {len(todo)}", i, len(todo))
+    unread = []
+    for item in todo:
         cached = store.get(item["Идентификатор"])
         parent = our_waybills.get(item["Идентификатор"])
         if cached and cached.read_at and (cached.order_no or cached.cargo):
             store.put(item["Идентификатор"], "waybill", item, parent_id=parent or cached.parent_id,
                       ours=(cached.order_no or "") in ours)
-            continue
+        else:
+            unread.append(item)
+
+    def read(item):
         card = sc.read_card(sid, sc.TMS_URL, item["Идентификатор"], sc.WAYBILL_TYPE)
-        facts = sc.waybill_facts(sc.attachment_xml(sid, card, "ЭТрН"))
+        return sc.waybill_facts(sc.attachment_xml(sid, card, "ЭТрН"))
+
+    facts_list = sc.pmap(read, unread, lambda i, n: _step(f"Читаю ЭТрН: {i} из {n}", i, n))
+    for item, facts in zip(unread, facts_list):
+        if isinstance(facts, Exception):
+            raise facts
         # Своя — только по номеру ЯЛ: груз «Готовые обеды» есть и у накладных Самоката
         mine = facts["order_no"] in ours
         store.put(item["Идентификатор"], "waybill", item, order_no=facts["order_no"] or None,
                   cargo=facts["cargo"][:150] or None, address=facts["address"][:400] or None,
-                  parent_id=parent, ours=mine, read_at=datetime.utcnow())
+                  parent_id=our_waybills.get(item["Идентификатор"]), ours=mine, read_at=datetime.utcnow())
 
 
 def refresh_day(day: date) -> None:
@@ -240,12 +271,24 @@ def _worker(day: date, label: str, action: Optional[Callable[[], Dict]]) -> None
         _progress["finished_at"] = sheet_sync.local_now().isoformat(timespec="seconds")
 
 
-def start(day: date, label: str = "Чтение СБИС", action: Optional[Callable[[], Dict]] = None) -> bool:
-    """Запустить операцию в фоне. Занято — False: одна операция с кабинетом за раз."""
-    if _progress["running"]:
+def busy() -> bool:
+    """Идёт ли какая-нибудь операция с кабинетом: своя или Самоката."""
+    from src import samokat_saby     # здесь: samokat_saby сам импортирует этот модуль
+    return bool(_progress["running"] or samokat_saby.progress()["running"])
+
+
+def start(day: date, label: str = "Чтение СБИС", action: Optional[Callable[[], Dict]] = None,
+          kind: str = "", orders=()) -> bool:
+    """Запустить операцию в фоне. Занято — False: одна операция с кабинетом за раз.
+
+    kind и orders — над какой колонкой и какими точками идёт работа: страница
+    покажет ход в строках таблицы."""
+    if busy():
         return False
     _progress.update(running=True, day=day.isoformat(), label=label, step="Начинаю", done=0, total=0,
-                     error=None, result=None)
+                     error=None, result=None, kind="", rows={})
+    if kind:
+        track(_progress, kind, orders)
     threading.Thread(target=_worker, args=(day, label, action), name="saby-task", daemon=True).start()
     return True
 
@@ -261,24 +304,30 @@ AUTO_AHEAD_DAYS = 3   # ближайшие поставки: по ним сей�
 
 
 def auto_days(db) -> list:
-    """Дни поставки с нашими заказами вокруг сегодняшнего — их и обновляем."""
+    """Дни поставки с нашими заказами вокруг сегодняшнего — их и обновляем: (день, Лавка?, Самокат?)."""
     today = sheet_sync.local_now().date()
-    rows = (db.query(database.LavkaOrder.delivery_date)
-            .filter(database.LavkaOrder.delivery_date.between(today - timedelta(days=AUTO_BACK_DAYS),
-                                                              today + timedelta(days=AUTO_AHEAD_DAYS)))
-            .distinct().all())
-    return sorted(d for (d,) in rows)
+    window = (today - timedelta(days=AUTO_BACK_DAYS), today + timedelta(days=AUTO_AHEAD_DAYS))
+    lavka = {d for (d,) in db.query(database.LavkaOrder.delivery_date)
+             .filter(database.LavkaOrder.delivery_date.between(*window)).distinct()}
+    samokat = {d for (d,) in db.query(database.SamokatOrder.delivery_date)
+               .filter(database.SamokatOrder.delivery_date.between(*window)).distinct()}
+    return [(d, d in lavka, d in samokat) for d in sorted(lavka | samokat)]
 
 
 def _auto_worker(days: list) -> None:
     done, failed = [], {}
     try:
         with _lock:
-            for i, day in enumerate(days, start=1):
+            from src import samokat_saby
+            for i, (day, lavka, samokat) in enumerate(days, start=1):
                 _progress["day"] = day.isoformat()
                 _step(f"Обновляю {day.strftime('%d.%m')} ({i} из {len(days)})", i, len(days))
                 try:
-                    refresh_day(day)
+                    if lavka:
+                        refresh_day(day)
+                    if samokat:
+                        samokat_saby.refresh_day(day, step=lambda text, *_: _step(
+                            f"Самокат {day.strftime('%d.%m')}: {text}", i, len(days)))
                     done.append(day.strftime("%d.%m"))
                 except sc.SabyError as exc:
                     failed[day.strftime("%d.%m")] = str(exc)
@@ -301,9 +350,9 @@ def _auto_worker(days: list) -> None:
 
 
 def start_auto(days: list) -> bool:
-    if not days or _progress["running"]:
+    if not days or busy():
         return False
-    _progress.update(running=True, day=days[0].isoformat(), label="Автообновление", step="Начинаю",
-                     done=0, total=len(days), error=None, result=None)
+    _progress.update(running=True, day=days[0][0].isoformat(), label="Автообновление", step="Начинаю",
+                     done=0, total=len(days), error=None, result=None, kind="", rows={})
     threading.Thread(target=_auto_worker, args=(days,), name="saby-auto", daemon=True).start()
     return True

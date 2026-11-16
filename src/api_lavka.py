@@ -427,20 +427,32 @@ def _sheet_label(start: date, end: date) -> str:
     return f"{start.strftime('%d.%m.%y')}–{end.strftime('%d.%m.%y')}"
 
 
-def _render_sheet(db: Session, start: date, end: date, left: str, right: str, mode: str, logo: str) -> Tuple[str, str]:
+def render_sheet(db: Session, start: date, end: date, left: str, right: str, mode: str, logo: str,
+                 items=None, brand: str = "Яндекс") -> Tuple[str, str]:
+    """Лист номенклатуры. items — откуда брать позиции (у Самоката свои), brand — заголовок листа."""
     if end < start:
         start, end = end, start
     modes = dict(SHEET_SORTS)
     left = left if left in modes else DEFAULT_SORT
     right = right if right in modes else left
-    items = _items(db, start, end)
+    rows = (items or _items)(db, start, end)
     label = _sheet_label(start, end)
     html = _sheet_env.get_template("lavka_sheet.html").render(
-        mode=mode, logo_src=logo, day_label=label,
-        items_left=sort_items(items, left), items_right=sort_items(items, right),
-        font_pt=fit_font_pt([i["name"] for i in items]), total_quantity=sum(i["quantity"] for i in items),
+        mode=mode, logo_src=logo, day_label=label, brand=brand,
+        items_left=sort_items(rows, left), items_right=sort_items(rows, right),
+        font_pt=fit_font_pt([i["name"] for i in rows]), total_quantity=sum(i["quantity"] for i in rows),
     )
     return html, label
+
+
+def sheet_pdf(html: str, name: str) -> Response:
+    try:
+        from weasyprint import HTML  # тяжёлая библиотека, без Pango падает с OSError
+    except (ImportError, OSError) as exc:
+        raise HTTPException(status_code=503, detail=f"Не удалось собрать PDF: на сервере нет библиотек вёрстки ({exc.__class__.__name__})")
+    pdf = HTML(string=html, base_url=str(STATIC_DIR)).write_pdf()
+    return Response(pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": "inline; filename*=UTF-8''" + quote(name)})
 
 
 @router.get("/sheet/sorts")
@@ -452,7 +464,7 @@ def lavka_sheet_sorts(user=Depends(auth.get_current_user)):
 def lavka_sheet_html(start: date, end: date, left: str = "", right: str = "",
                      db: Session = Depends(get_db), user=Depends(auth.get_current_user)):
     """Предпросмотр листа: та же вёрстка, что уходит в PDF."""
-    html, _ = _render_sheet(db, start, end, left, right, "preview", "/static/img/obed-logo.svg")
+    html, _ = render_sheet(db, start, end, left, right, "preview", "/static/img/obed-logo.svg")
     return HTMLResponse(html)
 
 
@@ -460,12 +472,5 @@ def lavka_sheet_html(start: date, end: date, left: str = "", right: str = "",
 def lavka_sheet_pdf(start: date, end: date, left: str = "", right: str = "",
                     db: Session = Depends(get_db), user=Depends(auth.get_current_user)):
     # Логотип путём к файлу: по http WeasyPrint постучался бы в это же приложение
-    html, label = _render_sheet(db, start, end, left, right, "pdf", (STATIC_DIR / "img" / "obed-logo.svg").as_uri())
-    try:
-        from weasyprint import HTML  # тяжёлая библиотека, без Pango падает с OSError
-    except (ImportError, OSError) as exc:
-        raise HTTPException(status_code=503, detail=f"Не удалось собрать PDF: на сервере нет библиотек вёрстки ({exc.__class__.__name__})")
-    pdf = HTML(string=html, base_url=str(STATIC_DIR)).write_pdf()
-    name = f"Яндекс {label} номенклатура.pdf"
-    return Response(pdf, media_type="application/pdf",
-                    headers={"Content-Disposition": f"inline; filename*=UTF-8''{quote(name)}"})
+    html, label = render_sheet(db, start, end, left, right, "pdf", (STATIC_DIR / "img" / "obed-logo.svg").as_uri())
+    return sheet_pdf(html, f"Яндекс {label} номенклатура.pdf")

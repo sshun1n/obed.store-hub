@@ -1645,8 +1645,10 @@ textarea.styled-text-input { resize: vertical; min-height: 64px; line-height: 1.
 
 ::view-transition-group(page) { animation: none; }
 ::view-transition-old(page), ::view-transition-new(page) { mix-blend-mode: normal; }
-::view-transition-old(page) { animation: page-out 0.12s ease both; }
-::view-transition-new(page) { animation: page-in 0.28s cubic-bezier(0.22, 0.8, 0.3, 1) 0.05s both; }
+/* Старая страница уходит сразу: если обе видны хоть миг, новая кажется наложенной
+   поверх старой — особенно когда старая длинная (таблица на 50 точек), а новая ещё грузится */
+::view-transition-old(page) { display: none; }
+::view-transition-new(page) { animation: page-in 0.24s cubic-bezier(0.22, 0.8, 0.3, 1) both; }
 
 @keyframes page-out { to { opacity: 0; } }
 @keyframes page-in {
@@ -2115,7 +2117,8 @@ a.saby-doc:hover, a.saby-doc:hover span { color: var(--red); }
 .saby-step-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 4px; }
 .saby-step-actions .btn-sm { padding: 6px 11px; }
 select.styled-text-input.saby-carrier { width: 100%; min-width: 0; height: 36px; padding: 0 30px 0 11px; font-size: 0.84rem; line-height: 34px; }
-.saby-busy .saby-steps, .saby-busy .saby-table { opacity: 0.6; pointer-events: none; transition: opacity 0.2s; }
+/* Во время операции шаги приглушены, а таблица — нет: в её ячейках виден ход */
+.saby-busy .saby-steps { opacity: 0.6; pointer-events: none; transition: opacity 0.2s; }
 
 /* Шапка таблицы и кнопка режима выбора — маленький акцент */
 .saby-table-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 10px; }
@@ -2222,3 +2225,98 @@ select.styled-text-input.saby-carrier { width: 100%; min-width: 0; height: 36px;
 .tp-cell:hover { background: var(--paper); color: var(--ink); }
 .tp-cell.on { background: var(--ink); color: #fff; }
 @media (prefers-reduced-motion: reduce) { .tp-pop { transition: none; } }
+
+/* ============================================================
+   Ход операций с СБИС: окошко в углу и ячейки таблиц
+   ============================================================ */
+.saby-task {
+    position: fixed; right: 24px; bottom: 24px; z-index: 4900;
+    display: flex; align-items: flex-start; gap: 12px;
+    width: min(340px, calc(100vw - 32px)); padding: 12px 12px 13px 14px;
+    background: var(--ink); color: #fff; border-radius: 12px;
+    box-shadow: 0 18px 40px -14px rgba(23, 23, 26, 0.55);
+    opacity: 0; transform: translateY(10px) scale(0.98);
+    transition: opacity 0.2s ease, transform 0.25s cubic-bezier(0.22, 0.8, 0.3, 1);
+    view-transition-name: saby-task;
+}
+.saby-task.show { opacity: 1; transform: none; }
+.saby-task[hidden] { display: none; }
+/* Тосты встают над окошком, а не под него */
+body:has(.saby-task.show) .toast-host { bottom: 112px; }
+
+.saby-task-icon { position: relative; flex-shrink: 0; width: 22px; height: 22px; margin-top: 1px; border-radius: 50%; }
+.saby-task[data-state="run"] .saby-task-icon {
+    border: 2.5px solid rgba(255, 255, 255, 0.18); border-top-color: #fff;
+    animation: saby-spin 0.8s linear infinite;
+}
+.saby-task[data-state="ok"] .saby-task-icon,
+.saby-task[data-state="warn"] .saby-task-icon,
+.saby-task[data-state="error"] .saby-task-icon { display: grid; place-items: center; animation: saby-pop 0.35s cubic-bezier(0.22, 0.8, 0.3, 1.4); }
+.saby-task[data-state="ok"] .saby-task-icon { background: var(--green); }
+.saby-task[data-state="warn"] .saby-task-icon { background: var(--yellow); }
+.saby-task[data-state="error"] .saby-task-icon { background: var(--red); }
+.saby-task[data-state="ok"] .saby-task-icon::after { content: ''; width: 9px; height: 5px; margin-top: -3px; border: solid #fff; border-width: 0 0 2px 2px; transform: rotate(-45deg); }
+.saby-task[data-state="warn"] .saby-task-icon::after,
+.saby-task[data-state="error"] .saby-task-icon::after { content: '!'; font-weight: 700; font-size: 0.8rem; line-height: 1; }
+
+.saby-task-body { flex: 1; min-width: 0; }
+.saby-task-title { display: flex; align-items: baseline; gap: 8px; font-size: 0.82rem; font-weight: 600; line-height: 1.3; }
+.saby-task-title span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.saby-task-title a { flex-shrink: 0; color: rgba(255, 255, 255, 0.7); font-weight: 500; font-size: 0.74rem; text-decoration: none; }
+.saby-task-title a:hover { color: #fff; }
+.saby-task-step { margin-top: 2px; font-size: 0.76rem; color: rgba(255, 255, 255, 0.68); line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.saby-task[data-state="error"] .saby-task-step { white-space: normal; color: #F6C9C2; }
+
+.saby-task-bar { position: relative; height: 4px; margin-top: 9px; border-radius: 4px; background: rgba(255, 255, 255, 0.14); overflow: hidden; }
+.saby-task-bar span {
+    position: absolute; inset: 0 auto 0 0; width: 3%; border-radius: inherit;
+    background: linear-gradient(90deg, #F06A5C, var(--red));
+    transition: width 0.9s cubic-bezier(0.22, 0.8, 0.3, 1);
+}
+.saby-task-bar span::after {   /* блик бежит по заполненной части: видно, что работа идёт */
+    content: ''; position: absolute; inset: 0; border-radius: inherit;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+    background-size: 60px 100%; background-repeat: no-repeat;
+    animation: saby-shine 1.4s linear infinite;
+}
+.saby-task-bar.indeterminate span { width: 35% !important; transition: none; animation: saby-slide 1.3s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
+.saby-task[data-state="ok"] .saby-task-bar span { background: var(--green); }
+.saby-task[data-state="warn"] .saby-task-bar span { background: var(--yellow); }
+.saby-task[data-state="error"] .saby-task-bar span { background: var(--red); }
+.saby-task:not([data-state="run"]) .saby-task-bar span::after { display: none; }
+
+.saby-task-close {
+    flex-shrink: 0; width: 22px; height: 22px; margin: -2px -2px 0 0; border: 0; border-radius: 6px;
+    background: transparent; color: rgba(255, 255, 255, 0.5); font-size: 1.1rem; line-height: 1; cursor: pointer;
+}
+.saby-task-close:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+
+@keyframes saby-spin { to { transform: rotate(360deg); } }
+@keyframes saby-pop { from { transform: scale(0.4); opacity: 0; } }
+@keyframes saby-shine { from { background-position: -60px 0; } to { background-position: calc(100% + 60px) 0; } }
+@keyframes saby-slide { from { left: -35%; } to { left: 100%; } }
+
+/* Ячейка, над которой сейчас работает СБИС: значок вместо содержимого */
+.saby-table td.is-live > .cell-main { display: none; }
+.cell-live { display: inline-flex; align-items: center; gap: 7px; font-size: 0.78rem; color: var(--ink-soft); white-space: nowrap; animation: cell-in 0.2s ease; }
+.cell-live .cell-spin { width: 14px; height: 14px; flex-shrink: 0; border-radius: 50%; border: 2px solid var(--line-strong); border-top-color: var(--red); animation: saby-spin 0.75s linear infinite; }
+.cell-live.s-wait { color: var(--muted); }
+.cell-live.s-wait .cell-spin { border-top-color: var(--line-strong); border-style: dotted; animation-duration: 2.4s; }
+.cell-live .cell-mark { display: inline-grid; place-items: center; width: 16px; height: 16px; flex-shrink: 0; border-radius: 50%; color: #fff; font-size: 0.66rem; font-weight: 700; animation: saby-pop 0.3s cubic-bezier(0.22, 0.8, 0.3, 1.4); }
+.cell-live.s-ok { color: #24522C; }
+.cell-live.s-ok .cell-mark { background: var(--green); }
+.cell-live.s-skip .cell-mark { background: var(--line-strong); }
+.cell-live.s-error { color: #8C2317; white-space: normal; }
+.cell-live.s-error .cell-mark { background: var(--red); }
+/* После операции новое состояние в ячейке проявляется, а не появляется скачком */
+.saby-table td.cell-flash > .cell-main { animation: cell-flash 0.6s ease; }
+@keyframes cell-in { from { opacity: 0; transform: translateY(2px); } }
+@keyframes cell-flash { from { opacity: 0; transform: scale(0.97); } 40% { opacity: 1; } }
+
+@media (max-width: 640px) {
+    .saby-task { right: 16px; bottom: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .saby-task, .saby-task-bar span { transition: none; }
+    .saby-task-bar span::after { animation: none; }
+}

@@ -6,15 +6,16 @@
 чтобы страница работала тем же скриптом.
 """
 from datetime import date
-from typing import Dict, List
+from typing import Dict, List, Optional
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from src import auth, database, lavka_mail, saby_client, samokat_saby, upd_registry
+from src import api_lavka, api_saby, auth, database, lavka_mail, saby_client, samokat_saby, upd_registry
 from src.api_lavka import _money, compare_range, format_range, short_address, sort_key
 from src.api_v1 import product_title
 from src.database import get_db
@@ -129,37 +130,114 @@ def samokat_orders(start: date, end: date, db: Session = Depends(get_db), user=D
     return result
 
 
+# --- Лист номенклатуры на производство — тот же, что у Лавки ---
+
+@router.get("/sheet/sorts")
+def samokat_sheet_sorts(user=Depends(auth.get_current_user)):
+    return [{"value": v, "label": l} for v, l in api_lavka.SHEET_SORTS]
+
+
+@router.get("/sheet.html", response_class=HTMLResponse)
+def samokat_sheet_html(start: date, end: date, left: str = "", right: str = "",
+                       db: Session = Depends(get_db), user=Depends(auth.get_current_user)):
+    html, _ = api_lavka.render_sheet(db, start, end, left, right, "preview", "/static/img/obed-logo.svg",
+                                     items=_items, brand="Самокат")
+    return HTMLResponse(html)
+
+
+@router.get("/sheet.pdf")
+def samokat_sheet_pdf(start: date, end: date, left: str = "", right: str = "",
+                      db: Session = Depends(get_db), user=Depends(auth.get_current_user)):
+    html, label = api_lavka.render_sheet(db, start, end, left, right, "pdf",
+                                         (api_lavka.STATIC_DIR / "img" / "obed-logo.svg").as_uri(),
+                                         items=_items, brand="Самокат")
+    return api_lavka.sheet_pdf(html, f"Самокат {label} номенклатура.pdf")
+
+
 # --- СБИС Самоката: день поставки по точкам ---
+
+def _doc(row) -> Optional[Dict]:
+    if row is None:
+        return None
+    kinds = set((row.attachments or "").split(","))
+    return {"id": row.saby_id, "number": row.number, "state": row.state, "link": row.link,
+            "amount": _money(row.amount) if row.amount is not None else None,
+            "approved": "ПодтверждениеЗаказа" in kinds, "upd": "УпдСчфДоп" in kinds}
+
+
+def _draft(state: Optional[str]) -> bool:
+    return not state or state in ("Черновик", "Документ редактируется")
+
 
 @router.get("/day")
 def samokat_day(day: date, db: Session = Depends(get_db), user=Depends(auth.get_current_user)):
-    """Точки дня из базы (без похода в СБИС): заказ УР-, строка реестра 1С по адресу, наша реализация."""
+    """Точки дня из базы, без похода в СБИС: заказ УР-, ответ на него, строка реестра 1С по адресу,
+    реализация и ЭТрН — как их видело последнее чтение кабинета."""
     rows = (db.query(Order).options(joinedload(Order.point))
             .filter(Order.delivery_date == day).all())
     rows.sort(key=lambda o: short_address(o.point.address if o.point else "").lower())
     registry = db.query(database.UpdRow).filter(database.UpdRow.day == day).order_by(database.UpdRow.number).all()
+    docs = db.query(database.SabyDoc).filter(database.SabyDoc.delivery_date == day).all()
+    mine = [d for d in docs if d.kind.startswith("sm_")]
+    by_kind: Dict[str, Dict[str, database.SabyDoc]] = {"sm_order": {}, "sm_shipment": {}, "waybill": {}}
+    for d in sorted(docs, key=lambda x: x.id):
+        if d.kind in by_kind and d.order_no and d.state != "Удалён":
+            by_kind[d.kind][d.order_no] = d
     used, points = set(), []
     for o in rows:
         address = o.point.address if o.point else ""
-        row = next((r for r in registry if r.id not in used and upd_registry.same_address(address, r.address or "")), None)
+        shipment = by_kind["sm_shipment"].get(o.order_no or "")
+        ship = _doc(shipment)
+        if ship is None and o.shipment_number:     # кабинет ещё не перечитан после создания
+            ship = {"id": o.shipment_id, "number": o.shipment_number, "state": o.shipment_state or "Черновик",
+                    "link": None, "amount": None, "approved": False, "upd": False}
+        # Строку реестра — сначала по номеру реализации (он и есть номер из 1С), потом по адресу
+        row = None
+        if ship is not None and ship["number"]:
+            row = next((r for r in registry if r.id not in used and r.number == ship["number"]), None)
+        if row is None:
+            row = next((r for r in registry if r.id not in used and upd_registry.same_address(address, r.address or "")), None)
         if row is not None:
             used.add(row.id)
         gross = _money(o.total_gross)
         points.append({
             "id": o.id, "order_no": o.order_no or "", "address": address, "address_short": short_address(address),
             "gln": o.point.gln if o.point else None, "quantity": int(o.total_quantity or 0), "gross": gross,
-            "registry": {"number": row.number, "amount": _money(row.amount), "ok": abs(_money(row.amount) - gross) < 1}
+            "registry": {"number": row.number, "amount": _money(row.amount), "ok": abs(_money(row.amount) - gross) < 1,
+                         "number_ok": (ship["number"] == row.number) if ship else None}
             if row is not None else None,
-            "shipment": {"number": o.shipment_number, "state": o.shipment_state or "Черновик"} if o.shipment_number else None,
+            "order": _doc(by_kind["sm_order"].get(o.order_no or "")),
+            "shipment": ship,
+            "waybill": _doc(by_kind["waybill"].get(o.order_no or "")),
         })
+    checked = max((d.checked_at for d in mine), default=None)
+    n = len(points)
     return {
-        "day": day.isoformat(), "is_admin": user.role == "admin", "registry_rows": len(registry),
+        "day": day.isoformat(), "label": format_range(day, day),
+        "is_admin": user.role == "admin", "configured": saby_client.configured(),
+        "checked_at": api_saby._local(checked),
+        "registry_rows": len(registry),
         "registry_free": [{"number": r.number, "address": r.address} for r in registry if r.id not in used],
-        "stats": {"points": len(points), "registry": sum(1 for p in points if p["registry"]),
-                  "orders": sum(1 for p in points if p["order_no"]),
-                  "shipments": sum(1 for p in points if p["shipment"])},
+        "stats": {"points": n, "registry": sum(1 for p in points if p["registry"]),
+                  "orders": sum(1 for p in points if p["order"]),
+                  "linked": sum(1 for p in points if p["order_no"]),
+                  "approved": sum(1 for p in points if p["order"] and p["order"]["approved"]),
+                  "shipments": sum(1 for p in points if p["shipment"]),
+                  "drafts": sum(1 for p in points if p["shipment"] and _draft(p["shipment"]["state"])),
+                  "sent": sum(1 for p in points if p["shipment"] and not _draft(p["shipment"]["state"])),
+                  "waybills": sum(1 for p in points if p["waybill"])},
         "points": points,
     }
+
+
+@router.post("/refresh")
+def samokat_refresh(day: date, user=Depends(auth.get_current_user)):
+    """Прочитать кабинет за день. Только чтение, поэтому кнопка доступна всем."""
+    if not saby_client.configured():
+        raise HTTPException(status_code=400, detail="Не заданы SABY_LOGIN и SABY_PASSWORD в .env сервера")
+    if not samokat_saby.start(day, user.login, "refresh"):
+        raise HTTPException(status_code=409, detail="Другая операция с СБИС ещё идёт, дождитесь её окончания")
+    return {"started": True}
 
 
 # --- СБИС: черновики реализаций с УПД ---
@@ -171,17 +249,20 @@ class DraftsIn(BaseModel):
 
 
 @router.post("/shipments")
-def samokat_shipments(data: DraftsIn, admin=Depends(auth.admin_only)):
+def samokat_shipments(data: DraftsIn, db: Session = Depends(get_db), admin=Depends(auth.admin_only)):
     """Проверка (dry_run) или создание черновиков реализаций. Ничего не отправляет. Только админ."""
     if not saby_client.configured():
         raise HTTPException(status_code=400, detail="Не заданы SABY_LOGIN и SABY_PASSWORD в .env сервера")
-    if not samokat_saby.start(data.day, admin.login, data.dry_run, data.orders or None):
+    targets = data.orders or [o.order_no for o in db.query(Order)
+                              .filter(Order.delivery_date == data.day, Order.order_no.isnot(None))]
+    if not samokat_saby.start(data.day, admin.login, "check" if data.dry_run else "create",
+                              data.orders or None, orders=targets):
         raise HTTPException(status_code=409, detail="Другая операция с СБИС ещё идёт, дождитесь её окончания")
     return {"started": True}
 
 
 @router.get("/shipments/status")
-def samokat_shipments_status(admin=Depends(auth.admin_only)):
+def samokat_shipments_status(user=Depends(auth.get_current_user)):
     return samokat_saby.progress()
 
 
@@ -190,7 +271,7 @@ def samokat_preview(order_no: str, admin=Depends(auth.admin_only)):
     """УПД последней проверки — файлом, как он ушёл бы в СБИС."""
     found = samokat_saby.preview(order_no)
     if found is None:
-        raise HTTPException(status_code=404, detail="Нет файла: сначала «Проверить без создания»")
+        raise HTTPException(status_code=404, detail="Нет файла: сначала «Проверить»")
     name, content = found
     return Response(content=content, media_type="application/xml",
-                    headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}.xml"})
+                    headers={"Content-Disposition": "attachment; filename*=UTF-8''" + quote(name) + ".xml"})

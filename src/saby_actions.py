@@ -210,6 +210,11 @@ def _notices(db, sid: str, needed: set, day: date, buyer_inn: str) -> Tuple[str,
     return template, {**known, **found}
 
 
+def _row(order_no: str, state: str, text: str = "") -> None:
+    """Ход по точке — для ячейки в таблице страницы «СБИС»."""
+    saby_sync.row(saby_sync._progress, order_no, state, text)
+
+
 def create_shipments(day: date, numbers: List[str], user: str) -> Dict:
     """Реализации черновиком, сразу заполненные: номер УПД из реестра, адрес, позиции."""
     db = database.SessionLocal()
@@ -218,28 +223,50 @@ def create_shipments(day: date, numbers: List[str], user: str) -> Dict:
         orders = _orders(db, day, numbers)
         saby_sync.step("Вход в СБИС")
         sid = sc.login()
-        used, ready, needed = set(), [], set()
-        for i, order in enumerate(orders, start=1):
-            label = order.point.name
-            saby_sync.step(f"Читаю заказ {i} из {len(orders)}", i, len(orders))
+        used, ready, needed, todo = set(), [], set(), []
+        for order in orders:
             row = _registry_row(db, day, order, used)
             if row is None:
-                result["errors"][label] = "нет строки в реестре 1С — загрузите реестр"
+                result["errors"][order.point.name] = "нет строки в реестре 1С — загрузите реестр"
+                _row(order.order_no, "error", "нет строки в реестре 1С")
                 continue
             used.add(row.id)
+            todo.append((order, row))
+
+        def fetch(pair):
+            order = pair[0]
+            _row(order.order_no, "work", "читаю заказ")
             item = _find_order(sid, order.order_no)
             if item is None:
-                result["errors"][label] = f"заказ {order.order_no} в СБИС не найден"
-                continue
+                return None
             card = sc.read_card(sid, sc.DOCS_URL, item["Идентификатор"], sc.ORDER_TYPE)
+            card["Идентификатор"] = item["Идентификатор"]
+            if sc.consequences(card, sc.SHIPMENT_TYPE):
+                return card, ""
+            return card, sc.xml_attachment(sid, card, "Заказ")
+
+        # Читаем заказы в несколько потоков, создаём — по одному
+        fetched = sc.pmap(fetch, todo, lambda i, n: saby_sync.step(f"Читаю заказы: {i} из {n}", i, n))
+        for (order, row), got in zip(todo, fetched):
+            label = order.point.name
+            if isinstance(got, Exception):
+                result["errors"][label] = str(got)
+                _row(order.order_no, "error", str(got))
+                continue
+            if got is None:
+                result["errors"][label] = f"заказ {order.order_no} в СБИС не найден"
+                _row(order.order_no, "error", "заказ в СБИС не найден")
+                continue
+            card, order_xml = got
             if sc.consequences(card, sc.SHIPMENT_TYPE):
                 result["skipped"].append(label)   # реализация уже есть — делать нечего
+                _row(order.order_no, "skip", "реализация уже есть")
                 continue
-            order_xml = sc.xml_attachment(sid, card, "Заказ")
             if not order_xml:
                 result["errors"][label] = "в заказе нет вложения с позициями"
+                _row(order.order_no, "error", "в заказе нет позиций")
                 continue
-            card["Идентификатор"] = item["Идентификатор"]
+            _row(order.order_no, "wait", "в очереди")
             ready.append((order, row, card, order_xml))
             needed |= {r.get("КодПокупателя") or "" for r in ET.fromstring(order_xml).iter("СтрТабл")} - {""}
         if not ready:
@@ -249,6 +276,7 @@ def create_shipments(day: date, numbers: List[str], user: str) -> Dict:
         for i, (order, row, card, order_xml) in enumerate(ready, start=1):
             label = order.point.name
             saby_sync.step(f"Создаю реализацию {i} из {len(ready)}", i, len(ready))
+            _row(order.order_no, "work", "создаю")
             note = row.address or order.point.name
             try:
                 name, content = desadv.build(order_xml, template, number=row.number, day=day, note=note,
@@ -266,11 +294,13 @@ def create_shipments(day: date, numbers: List[str], user: str) -> Dict:
                                            "ДвоичныеДанные": base64.b64encode(content).decode()}}],
                 })
                 result["done"].append(label)
+                _row(order.order_no, "ok", "создана")
                 unknown = desadv.unknown_positions(order_xml, catalogue)
                 if unknown:
                     result["notes"].append(f"{label}: названия из заказа Лавки, нет в каталоге — {', '.join(unknown)}")
             except (sc.SabyError, desadv.NoticeError) as exc:
                 result["errors"][label] = str(exc)
+                _row(order.order_no, "error", str(exc))
         return result
     finally:
         db.close()
@@ -288,6 +318,7 @@ def process_shipments(day: date, numbers: List[str], user: str) -> Dict:
         for i, order in enumerate(orders, start=1):
             label = order.point.name
             saby_sync.step(f"Провожу точку {i} из {len(orders)}", i, len(orders))
+            _row(order.order_no, "work", "провожу")
             try:
                 row = _registry_row(db, day, order, used)
                 if row is not None:
@@ -303,6 +334,7 @@ def process_shipments(day: date, numbers: List[str], user: str) -> Dict:
                 # Проведённую не трогаем и ошибкой не считаем: при «все точки» это обычный случай
                 if sc.state(card) in sc.FINISHED or sc.state(shipment) != DRAFT:
                     result["skipped"].append(label)
+                    _row(order.order_no, "skip", "уже проведена")
                     continue
                 number = str(shipment.get("Номер") or "").strip()
                 note = str(shipment.get("Примечание") or "")
@@ -313,8 +345,10 @@ def process_shipments(day: date, numbers: List[str], user: str) -> Dict:
                 sc.run_action(sid, sc.DOCS_URL, shipment["Идентификатор"], "Отправка", "Отправить")
                 sc.run_action(sid, sc.DOCS_URL, item["Идентификатор"], "Утверждение", "Утвердить", _approval_stage(card))
                 result["done"].append(label)
+                _row(order.order_no, "ok", "проведена")
             except sc.SabyError as exc:
                 result["errors"][label] = str(exc)
+                _row(order.order_no, "error", str(exc))
         return result
     finally:
         db.close()
@@ -532,6 +566,7 @@ def create_waybills(day: date, numbers: List[str], user: str) -> Dict:
         for o in _orders(db, day, numbers):
             if o.order_no in have:
                 result["skipped"].append(o.point.name)
+                _row(o.order_no, "skip", "ЭТрН уже есть")
             else:
                 orders.append(o)
         if not orders:
@@ -546,6 +581,7 @@ def create_waybills(day: date, numbers: List[str], user: str) -> Dict:
             label = order.point.name
             number = str(first + i)
             saby_sync.step(f"Создаю ЭТрН {i + 1} из {len(orders)}", i + 1, len(orders))
+            _row(order.order_no, "work", "создаю ЭТрН")
             try:
                 file = sc.generate_attachment(sid, WAYBILL_ATTACH, WAYBILL_KND, FORMAT_VERSION,
                                               waybill_payload(s, own, buyer, carrier, order, number, transport, day,
@@ -568,9 +604,11 @@ def create_waybills(day: date, numbers: List[str], user: str) -> Dict:
                 db.commit()
                 result["done"].append(label)
                 result["doc_ids"].append(doc["Идентификатор"])
+                _row(order.order_no, "ok", "создана")
             except sc.SabyError as exc:
                 db.rollback()
                 result["errors"][label] = str(exc)
+                _row(order.order_no, "error", str(exc))
         return result
     finally:
         db.close()
@@ -733,7 +771,7 @@ def check_transport(doc_id: str) -> Optional[str]:
 
 def poll_due() -> None:
     """Раз в минуту из планировщика: проверить те заказы, чей срок подошёл."""
-    if not sc.configured() or saby_sync.progress()["running"]:
+    if not sc.configured() or saby_sync.busy():
         return
     db = database.SessionLocal()
     try:
@@ -771,7 +809,7 @@ def auto_sync_due() -> None:
     Срок отмечаем до запуска: если СБИС недоступен, следующая попытка будет в свой
     срок, а не каждую минуту. Если идёт ручная операция, срок не отмечаем и ждём её.
     """
-    if not sc.configured() or saby_sync.progress()["running"]:
+    if not sc.configured() or saby_sync.busy():
         return
     db = database.SessionLocal()
     try:

@@ -181,3 +181,214 @@
         }
     });
 })();
+
+/**
+ * Окошко хода операций с СБИС (Лавка и Самокат). Живёт на каждой странице:
+ * ход держит сервер (/api/v1/saby/tasks), поэтому при переходе между разделами
+ * окошко не пропадает — новая страница сразу рисует последнее известное
+ * состояние из sessionStorage и продолжает опрос.
+ *
+ * Страницы СБИС подписываются на ход (onUpdate) и ждут конца операции (wait).
+ */
+window.SabyTask = (() => {
+    if (window.location.pathname.includes('login')) return null;
+    const STATE_KEY = 'obed_saby_tasks';
+    const WATCH_KEY = 'obed_saby_watched';
+    const HIDE_KEY = 'obed_saby_task_hidden';
+    const DONE_SHOW_MS = 7000;
+    const FOREVER = 1e15;            // «пока идёт» — в sessionStorage Infinity не сохраняется
+    const NAMES = { lavka: 'СБИС', samokat: 'СБИС Самоката' };
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const read = (key, fallback) => { try { return JSON.parse(sessionStorage.getItem(key)) ?? fallback; } catch { return fallback; } };
+    const write = (key, value) => { try { sessionStorage.setItem(key, JSON.stringify(value)); } catch { /* приватный режим */ } };
+
+    let box = null;
+    let timer = null;
+    let hideTimer = null;
+    let tasks = read(STATE_KEY, { at: 0, list: [] });
+    // Операции, которые этот браузер видел идущими: только про них показываем «готово»
+    const watched = read(WATCH_KEY, {});
+    const listeners = [];
+    const waiters = [];
+
+    const key = (t) => `${t.source}|${t.label}|${t.day}`;
+
+    // Доля сделанного: по точкам, если операция идёт по точкам, иначе по шагам
+    function percent(t) {
+        const rows = Object.values(t.rows || {});
+        if (t.kind && rows.length) {
+            const finished = rows.filter(r => r.s === 'ok' || r.s === 'skip' || r.s === 'error').length;
+            const working = rows.filter(r => r.s === 'work').length;
+            return Math.min(100, ((finished + working * 0.5) / rows.length) * 100);
+        }
+        return t.total ? Math.min(100, (t.done / t.total) * 100) : null;
+    }
+
+    function mount() {
+        if (box) return;
+        box = document.createElement('div');
+        box.className = 'saby-task';
+        box.setAttribute('role', 'status');
+        box.setAttribute('aria-live', 'polite');
+        box.hidden = true;
+        box.innerHTML = `
+            <span class="saby-task-icon" aria-hidden="true"></span>
+            <div class="saby-task-body">
+                <div class="saby-task-title"></div>
+                <div class="saby-task-step"></div>
+                <div class="saby-task-bar"><span></span></div>
+            </div>
+            <button type="button" class="saby-task-close" aria-label="Скрыть">&times;</button>`;
+        box.querySelector('.saby-task-close').addEventListener('click', () => {
+            const t = current();
+            if (t) write(HIDE_KEY, t.running ? key(t) : `${key(t)}|${t.finished_at}`);
+            hide();
+        });
+        document.body.appendChild(box);
+    }
+
+    function hide() {
+        if (!box || box.hidden) return;
+        box.classList.remove('show');
+        clearTimeout(hideTimer);
+        hideTimer = setTimeout(() => { if (!box.classList.contains('show')) box.hidden = true; }, 220);
+    }
+
+    // Что показывать: идущую операцию, иначе только что закончившуюся из тех, что мы видели
+    function current() {
+        const running = tasks.list.find(t => t.running);
+        if (running) return running;
+        const now = Date.now();
+        return tasks.list
+            .filter(t => t.finished_at && watched[key(t)] && watched[key(t)] > now)
+            .sort((a, b) => (a.finished_at < b.finished_at ? 1 : -1))[0] || null;
+    }
+
+    function render() {
+        mount();
+        const t = current();
+        const off = t && [key(t), `${key(t)}|${t.finished_at}`].includes(read(HIDE_KEY, null));
+        if (!t || off) { hide(); return; }
+        const here = window.location.pathname === t.page;
+        const bar = box.querySelector('.saby-task-bar');
+        box.dataset.state = t.running ? 'run' : (t.error ? 'error' : (t.counts && t.counts.errors ? 'warn' : 'ok'));
+        box.querySelector('.saby-task-title').innerHTML = `<span>${esc(t.label || 'СБИС')}</span>${here ? ''
+            : `<a href="${esc(t.page)}${t.day ? `?day=${esc(t.day)}` : ''}">${esc(NAMES[t.source] || 'Открыть')} →</a>`}`;
+        let step;
+        if (t.running) step = t.step || 'Начинаю';
+        else if (t.error) step = t.error;
+        else {
+            const c = t.counts || {};
+            step = ['Готово', c.done ? `сделано ${c.done}` : '', c.skipped ? `пропущено ${c.skipped}` : '',
+                c.errors ? `ошибок ${c.errors}` : ''].filter(Boolean).join(' · ');
+        }
+        const stepEl = box.querySelector('.saby-task-step');
+        stepEl.textContent = step;
+        stepEl.title = step;
+        const pct = t.running ? percent(t) : 100;
+        bar.classList.toggle('indeterminate', pct === null);
+        if (pct !== null) bar.firstElementChild.style.width = `${Math.max(3, pct)}%`;
+        clearTimeout(hideTimer);
+        if (box.hidden) { box.hidden = false; requestAnimationFrame(() => box.classList.add('show')); }
+        else box.classList.add('show');
+    }
+
+    function schedule() {
+        clearTimeout(timer);
+        const running = tasks.list.some(t => t.running) || waiters.length;
+        timer = setTimeout(poll, running ? 900 : (document.hidden ? 60000 : 15000));
+    }
+
+    async function poll() {
+        const asked = Date.now();
+        try {
+            const r = await fetch('/api/v1/saby/tasks');
+            if (!r.ok) { schedule(); return; }
+            const data = await r.json();
+            const now = Date.now();
+            for (const t of data.tasks) {
+                const k = key(t);
+                if (t.running) watched[k] = FOREVER;
+                else if (watched[k] === FOREVER) watched[k] = now + DONE_SHOW_MS;
+            }
+            for (const k of Object.keys(watched)) if (watched[k] < now) delete watched[k];
+            write(WATCH_KEY, watched);
+            tasks = { at: now, list: data.tasks };
+            write(STATE_KEY, tasks);
+            render();
+            listeners.forEach(fn => { try { fn(tasks.list); } catch (err) { console.error(err); } });
+            for (let i = waiters.length - 1; i >= 0; i--) {
+                const t = tasks.list.find(x => x.source === waiters[i].source);
+                // Ответ на запрос, отправленный раньше запуска операции, не в счёт
+                if (t && !t.running && asked >= waiters[i].since) { waiters[i].resolve(t); waiters.splice(i, 1); }
+            }
+            // Окошко «готово» гаснет само
+            const shown = current();
+            if (shown && !shown.running) setTimeout(render, Math.max(0, watched[key(shown)] - now) + 50);
+        } catch { /* сеть моргнула — следующий опрос */ }
+        schedule();
+    }
+
+    // Сразу — последнее известное состояние, чтобы окошко не мигало при переходе
+    if (Date.now() - tasks.at < 20000) render();
+    poll();
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
+
+    // --- Ячейки таблиц: над какой точкой сейчас работа ---
+    // Строка таблицы — tr[data-order], ячейка — td[data-col] с содержимым в .cell-main
+
+    const LIVE = {
+        wait: (r) => `<span class="cell-spin"></span>${esc(r.t || 'в очереди')}`,
+        work: (r) => `<span class="cell-spin"></span>${esc(r.t || 'в работе')}`,
+        ok: (r) => `<span class="cell-mark">✓</span>${esc(r.t || 'готово')}`,
+        skip: (r) => `<span class="cell-mark">–</span>${esc(r.t || 'пропущено')}`,
+        error: (r) => `<span class="cell-mark">!</span>${esc(r.t || 'ошибка')}`,
+    };
+    const cellOf = (root, order, col) =>
+        root.querySelector(`tr[data-order="${CSS.escape(order)}"] td[data-col="${col}"]`);
+
+    function decorate(root, task, day) {
+        if (!root) return;
+        const rows = task && task.running && task.kind && task.day === day ? task.rows || {} : {};
+        root.querySelectorAll('td.is-live').forEach((td) => {
+            const order = td.closest('tr').dataset.order;
+            if (!rows[order] || td.dataset.col !== task.kind) {
+                td.classList.remove('is-live');
+                td.querySelector('.cell-live')?.remove();
+            }
+        });
+        for (const [order, r] of Object.entries(rows)) {
+            const td = cellOf(root, order, task.kind);
+            if (!td) continue;
+            let live = td.querySelector('.cell-live');
+            if (live && live.dataset.s !== r.s) { live.remove(); live = null; }
+            if (!live) {
+                td.classList.add('is-live');
+                td.insertAdjacentHTML('beforeend', `<span class="cell-live s-${r.s}" data-s="${r.s}"></span>`);
+                live = td.querySelector('.cell-live');
+            }
+            live.innerHTML = (LIVE[r.s] || LIVE.work)(r);
+            live.title = r.t || '';
+        }
+    }
+
+    // Операция кончилась, таблица перерисована: новое состояние в тронутых ячейках проявляется
+    function flash(root, task, day) {
+        if (!root || !task || !task.kind || task.day !== day) return;
+        for (const order of Object.keys(task.rows || {})) {
+            const td = cellOf(root, order, task.kind);
+            if (td) td.classList.add('cell-flash');
+        }
+    }
+
+    return {
+        decorate,
+        flash,
+        // Новая операция только что запущена: показать и опрашивать часто
+        poke() { write(HIDE_KEY, null); clearTimeout(timer); poll(); },
+        onUpdate(fn) { listeners.push(fn); if (tasks.list.length) fn(tasks.list); },
+        // Дождаться конца операции источника (lavka | samokat); результат — её ход
+        wait(source) { return new Promise((resolve) => { waiters.push({ source, resolve, since: Date.now() }); clearTimeout(timer); poll(); }); },
+        get(source) { return tasks.list.find(t => t.source === source) || null; },
+    };
+})();

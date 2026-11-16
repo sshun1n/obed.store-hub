@@ -8,11 +8,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=1.21.0">
+    <link rel="stylesheet" href="/static/style.css?v=1.25.0">
     <link rel="expect" href="#hubEnd" blocking="render">
 </head>
 <body>
-    <script src="/static/components.js?v=1.20.0"></script>
+    <script src="/static/components.js?v=1.21.0"></script>
     <div class="container">
         <header class="page-header page-head-row">
             <div>
@@ -36,6 +36,9 @@
                 </button>
                 <button type="button" class="icon-btn" id="nextPeriod" aria-label="Следующий период">›</button>
                 <div class="period-pop" id="periodPop" role="dialog" aria-label="Выбор даты или периода" hidden></div>
+            </div>
+            <div class="lavka-actions">
+                <button type="button" class="btn btn-primary btn-sm" id="sheetBtn">Номенклатура</button>
             </div>
         </div>
 
@@ -79,18 +82,38 @@
         </div>
     </div>
 
+    <div class="modal" id="sheetModal">
+        <div class="modal-content sheet-modal" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+            <header class="sheet-modal-head">
+                <div>
+                    <span class="eyebrow">Лист на производство</span>
+                    <h2 class="card-title-small" id="sheetTitle">Номенклатура</h2>
+                </div>
+                <button type="button" class="icon-btn" id="sheetClose" aria-label="Закрыть">&times;</button>
+            </header>
+            <div class="sheet-toolbar">
+                <select id="sheetSort" class="styled-text-input" aria-label="Сортировка листа"></select>
+                <button type="button" class="btn btn-primary" id="sheetPrint">Печать</button>
+            </div>
+            <div class="sheet-stage" id="sheetStage">
+                <iframe id="sheetFrame" title="Предпросмотр листа номенклатуры"></iframe>
+            </div>
+            <p class="field-hint sheet-hint">A4 альбомный, две одинаковые половины: лист режется по пунктиру. Если принтер не возьмёт альбомную ориентацию сам, выберите её в окне печати.</p>
+        </div>
+    </div>
 
     <script src="/static/hub-ui.js?v=1.10.0"></script>
     <script src="/static/period-picker.js?v=1.19.0"></script>
+    <script src="/static/lavka-sheet.js?v=1.17.0"></script>
     <script>
         window.ORDERS_PAGE = {
             api: '/api/v1/samokat',
-            sheet: false,
+            brand: 'Самокат',
             owner: 'Самоката',
             revisedText: 'Самокат прислал исправленный заказ на этот день, точек',
         };
     </script>
-    <script src="/static/lavka.js?v=1.17.1"></script>
+    <script src="/static/lavka.js?v=1.18.0"></script>
     <div id="hubEnd" hidden></div>
 </body>
 </html>
