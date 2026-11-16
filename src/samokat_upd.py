@@ -80,8 +80,15 @@ def _org(parent: ET.Element, tag: str, inn: str, kpp: str, name: str, gln: str, 
 
 
 def build(order_xml: str, template_xml: str, *, number: str, day: date, contract: Contract,
-          receiver_box: str, sender_box: str = "", now: datetime | None = None) -> Tuple[str, bytes]:
-    """УПД по заказу Самоката: имя файла (без .xml) и содержимое в windows-1251."""
+          receiver_box: str, codes: dict, sender_box: str = "", now: datetime | None = None) -> Tuple[str, bytes]:
+    """УПД по заказу Самоката: имя файла (без .xml) и содержимое в windows-1251.
+
+    codes — код покупателя (УТ-…) → код карточки нашего каталога, к которой строка
+    привязана в самом заказе. У блюда две карточки: Лавки (со штрих-кодом) и Самоката.
+    По штрих-коду СБИС выбрал бы карточку Лавки, и заказ остался бы «отгружен
+    частично». Код карточки пишем так же, как СБИС в своих УПД (КодТов, Ид, Код,
+    КодПоставщика) — по нему строка реализации садится на ту же карточку, что в заказе.
+    """
     try:
         order = ET.fromstring(order_xml.encode("windows-1251") if order_xml.lstrip().startswith("<?xml") else order_xml)
         root = ET.fromstring(template_xml.encode("windows-1251") if template_xml.lstrip().startswith("<?xml") else template_xml)
@@ -197,19 +204,27 @@ def build(order_xml: str, template_xml: str, *, number: str, day: date, contract
         buyer_code = row.get("КодПокупателя") or ""
         if qty <= 0 or not gtin or not buyer_code:
             raise UpdError(f"Строка {position}: нет количества, штрих-кода или кода покупателя")
+        item_code = codes.get(buyer_code) or ""
+        if not item_code:
+            raise UpdError(f"«{row.get('Название')}» ({buyer_code}) в заказе не сопоставлена с каталогом — "
+                           "сопоставьте в заказе, иначе реализация сядет не на ту карточку")
         okei = OKEI.get(row.get("ОКЕИ") or "", row.get("ОКЕИ") or "796")
         line = ET.SubElement(table, "СведТов", {
             "КолТов": _qty(qty), "НаимЕдИзм": UNITS.get(okei, "шт"), "НаимТов": row.get("Название") or "",
             "НалСт": rate, "НомСтр": str(position), "ОКЕИ_Тов": okei,
             "СтТовБезНДС": _money(net), "СтТовУчНал": _money(gross), "ЦенаТов": _money(net / qty),
         })
-        ET.SubElement(line, "ДопСведТов", {"КодТов": gtin, "ПрТовРаб": "1"})
+        ET.SubElement(line, "ДопСведТов", {"КодТов": item_code, "ПрТовРаб": "1"})
         excise = ET.SubElement(line, "Акциз")
         ET.SubElement(excise, "БезАкциз").text = "без акциза"
         tax = ET.SubElement(line, "СумНал")
         ET.SubElement(tax, "СумНал").text = _money(vat)
-        for key, value in (("штрихкод", gtin), ("код_покупателя", buyer_code), ("GTIN", gtin),
-                           ("ЗаказНомер", order_no), ("НазваниеПокупателя", row.get("Название") or "")):
+        name = row.get("Название") or ""
+        for key, value in (("штрихкод", gtin), ("код_покупателя", buyer_code),
+                           # Дальше — как в УПД, которые СБИС делает сам по заказам EDI
+                           ("НазваниеПокупателя", name), ("GTIN", gtin), ("ЗаказНомер", order_no),
+                           ("Ид", item_code), ("ШК", item_code), ("Код", item_code), ("КодПоставщика", item_code),
+                           ("НазваниеПоставщика", name), ("ПоляНоменклатуры", '"Type":"True"')):
             ET.SubElement(line, "ИнфПолФХЖ2", {"Значен": value, "Идентиф": key})
         total_net += net
         total_gross += gross

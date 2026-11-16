@@ -80,6 +80,25 @@ def _box(sid: str, party: dict) -> str:
     return info.get("Идентификатор") or ""
 
 
+def item_codes(sid: str, card: dict) -> Dict[str, str]:
+    """Код покупателя → код нашей карточки каталога, как строки привязаны в заказе сейчас.
+
+    Берётся из учётного вложения заказа (ВложениеУчета): там СБИС держит заказ уже
+    с нашей номенклатурой, и после сопоставления или объединения карточек код в нём
+    свежий. Файл ответа на заказ для этого не годится: он отправлен и не меняется.
+    """
+    codes: Dict[str, str] = {}
+    for attachment in card.get("ВложениеУчета") or []:
+        link = (attachment.get("Файл") or {}).get("Ссылка")
+        if not link or attachment.get("Тип") != "Заказ":
+            continue
+        root = samokat_upd.ET.fromstring(sc.download(sid, link).encode("windows-1251"))
+        for row in root.iter("СтрТабл"):
+            if row.get("КодПокупателя") and row.get("КодПоставщика"):
+                codes[row.get("КодПокупателя")] = row.get("КодПоставщика")
+    return codes
+
+
 def _samokat_orders(sid: str, day: date) -> List[Tuple[dict, dict, str]]:
     """Заказы Самоката в СБИС с поставкой на этот день: (строка списка, карточка, XML заказа)."""
     found = []
@@ -184,7 +203,8 @@ def create_drafts(day: date, user: str, dry_run: bool, only: Optional[List[str]]
                 if row.amount is not None and abs(row.amount - gross) > 1:
                     result["notes"].append(f"{label}: сумма в 1С {row.amount}, в заказе {gross}")
                 name, content = samokat_upd.build(xml, template, number=row.number, day=day, contract=CONTRACT,
-                                                  receiver_box=receiver, sender_box=sender)
+                                                  receiver_box=receiver, sender_box=sender,
+                                                  codes=item_codes(sid, card))
                 if dry_run:
                     _previews[order_no] = (name, content)
                     result["done"].append(label)
