@@ -172,7 +172,8 @@ document.addEventListener('DOMContentLoaded', () => {
         let body4 = '';
         if (admin && ready && !toWaybill.length && toSign.length) {
             body4 = btn('waybill-sign', 'Подписать', { primary: true });
-        } else if (admin && ready) {
+        } else if (admin && ready && (toWaybill.length || toSign.length)) {
+            // Всё создано и подписано — кнопок нет: делать нечего
             body4 = [
                 btn('waybill-all', 'Создать и подписать', { primary: true, disabled: !toWaybill.length && !toSign.length }),
                 set.hide_split_waybills ? '' : btn('waybill-create', 'Создать', { disabled: !toWaybill.length }),

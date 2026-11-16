@@ -137,7 +137,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const check = set3.hide_check ? '' : btn('check', 'Проверить', { title: 'Собрать УПД по точкам, ничего не создавая — можно скачать файлы' });
         let body3 = '';
         if (admin && s.sent < n) {
-            body3 = !toCreate.length && toSend.length ? btn('ship-sign', 'Подписать', { primary: true }) + check : [
+            body3 = !toCreate.length && !toSend.length ? check
+                : !toCreate.length && toSend.length ? btn('ship-sign', 'Подписать', { primary: true }) + check : [
                 btn('ship-all', 'Создать и подписать', { primary: true, disabled: !toCreate.length && !toSend.length }),
                 set3.hide_split_shipments ? '' : btn('create', 'Создать', { disabled: !toCreate.length,
                     title: toCreate.length ? 'Реализации с УПД черновиками, без отправки' : 'Создавать нечего: у точек уже есть реализации, нет строки реестра или заказ не найден в кабинете' }),
@@ -186,6 +187,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (admin) {
             const check = set.hide_check ? '' : btn('waybill-check', 'Проверить', { disabled: !toWaybill.length, title: 'Собрать ЭТрН и сверить с требованиями Самоката, ничего не создавая' });
             if (!ready) body5 = check;
+            else if (!toWaybill.length && !toSign.length) body5 = '';     // всё создано и подписано
             else if (!toWaybill.length && toSign.length) body5 = btn('waybill-sign', 'Подписать', { primary: true });
             else body5 = [
                 btn('waybill-all', 'Создать и подписать', { primary: true, disabled: !toWaybill.length && !toSign.length }),
