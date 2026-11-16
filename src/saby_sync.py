@@ -179,7 +179,11 @@ def _shipments(sid: str, store: _Store, links: Dict[str, dict]) -> None:
 def _transport(sid: str, store: _Store, ours: Set[str]) -> None:
     """Заказы на перевозку дня и их ЭТрН. Свои — по грузу, накладные — по ORDERS."""
     _step("Смотрю заказы на перевозку")
-    transports = list(sc.list_documents(sid, sc.TMS_URL, sc.TRANSPORT_TYPE, start=store.day, end=store.day))
+    # Заказ на перевозку и ЭТрН Самоката у нас записаны (sm_…): груз у них тот же,
+    # «Готовые обеды», поэтому отличаем по записи, а не по грузу, и не трогаем их
+    samokat = {d.saby_id for d in store.rows.values() if d.kind.startswith("sm_")}
+    transports = [t for t in sc.list_documents(sid, sc.TMS_URL, sc.TRANSPORT_TYPE, start=store.day, end=store.day)
+                  if t["Идентификатор"] not in samokat]
     foreign_waybills: Set[str] = set()
     our_waybills: Dict[str, str] = {}
     # Карточки заказов на перевозку читаем каждый раз: их два в день, а только из
@@ -198,7 +202,7 @@ def _transport(sid: str, store: _Store, ours: Set[str]) -> None:
                 foreign_waybills.add(child["id"])
 
     waybills = list(sc.list_documents(sid, sc.TMS_URL, sc.WAYBILL_TYPE, start=store.day, end=store.day))
-    todo = [w for w in waybills if w["Идентификатор"] not in foreign_waybills]
+    todo = [w for w in waybills if w["Идентификатор"] not in foreign_waybills and w["Идентификатор"] not in samokat]
     unread = []
     for item in todo:
         cached = store.get(item["Идентификатор"])

@@ -628,7 +628,10 @@ UPD_DEADLINE_DAYS = 5     # на отправку УПД после отгруз
 # вид → (тип документа, предпочтительные переходы, адрес сервиса, заранее известный шаг)
 KINDS = {"transport": (sc.TRANSPORT_TYPE, ORDER_ACTIONS, sc.TMS_URL, None),
          "waybill": (sc.WAYBILL_TYPE, WAYBILL_ACTIONS, sc.TMS_URL, None),
-         "upd": (sc.SHIPMENT_TYPE, (), sc.DOCS_URL, UPD_STEP)}
+         "upd": (sc.SHIPMENT_TYPE, (), sc.DOCS_URL, UPD_STEP),
+         # Самокат: свои заказ на перевозку и ЭТрН (samokat_transport), подписываются так же
+         "sm_transport": (sc.TRANSPORT_TYPE, ORDER_ACTIONS, sc.TMS_URL, None),
+         "sm_waybill": (sc.WAYBILL_TYPE, WAYBILL_ACTIONS, sc.TMS_URL, None)}
 
 
 def upd_ready(doc: database.SabyDoc) -> bool:
@@ -652,7 +655,7 @@ def sign_targets(db, day: date, kind: str, numbers: List[str]) -> List[database.
     query = db.query(database.SabyDoc).filter(database.SabyDoc.delivery_date == day, database.SabyDoc.kind == kind,
                                               database.SabyDoc.ours.is_(True), database.SabyDoc.state == DRAFT)
     docs = query.all()
-    if kind == "waybill" and numbers:
+    if kind in ("waybill", "sm_waybill") and numbers:
         docs = [d for d in docs if d.order_no in set(numbers)]
     return docs
 
@@ -720,7 +723,7 @@ def send_signing(token: str, signatures: Dict[str, str]) -> Dict:
     db = database.SessionLocal()
     try:
         names = {d.saby_id: f"№ {d.number}" for d in db.query(database.SabyDoc).filter(database.SabyDoc.saby_id.in_(list(item["docs"])))}
-        if item["kind"] == "transport" and sent:
+        if item["kind"] in ("transport", "sm_transport") and sent:
             # Отправили перевозчику — с этой минуты ждём его подпись
             s = get_settings(db)
             for d in db.query(database.SabyDoc).filter(database.SabyDoc.saby_id.in_(sent)):
@@ -728,7 +731,7 @@ def send_signing(token: str, signatures: Dict[str, str]) -> Dict:
             db.commit()
     finally:
         db.close()
-    return {"day": item["day"], "sent": [names.get(i, i) for i in sent],
+    return {"day": item["day"], "kind": item["kind"], "sent": [names.get(i, i) for i in sent],
             "errors": {names.get(i, i): e for i, e in errors.items()}}
 
 
@@ -740,7 +743,7 @@ WAIT_DAYS = 3   # заказ, не подписанный через 3 дня п
 def waiting_transports(db) -> List[database.SabyDoc]:
     """Наши заказы на перевозку, ушедшие перевозчику и ещё не подписанные им."""
     since = sheet_sync.local_now().date() - timedelta(days=WAIT_DAYS)
-    return [d for d in db.query(database.SabyDoc).filter(database.SabyDoc.kind == "transport",
+    return [d for d in db.query(database.SabyDoc).filter(database.SabyDoc.kind.in_(("transport", "sm_transport")),
                                                          database.SabyDoc.ours.is_(True),
                                                          database.SabyDoc.delivery_date >= since)
             if d.state not in sc.FINISHED and d.state not in (DRAFT, "Удалён", None, "")

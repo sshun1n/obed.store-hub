@@ -14,6 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let waiting = false;     // эта страница ждёт свою операцию
     let lastResult = null;
     let finished = null;     // только что закончившаяся операция: её ячейки проявятся после перерисовки
+    let lastLabel = '';      // название последней операции — для сводки результата
 
     const picker = PeriodPicker.create({
         root: el('periodPicker'), button: el('periodBtn'), pop: el('periodPop'),
@@ -31,7 +32,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (d === Hub.isoDate(tomorrow)) return `завтра в ${t.slice(0, 5)}`;
         return `${Hub.fmtDate(d)} в ${t.slice(0, 5)}`;
     };
-    const isDraft = (s) => !s || /редактируется|черновик/i.test(s);
+    const kg = (v) => `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 }).format(v || 0)} кг`;
+    let carrierId = null;
 
     // --- Короткие состояния: те же, что у Лавки ---
 
@@ -81,9 +83,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const upd = ship.upd ? ' <span class="st st-ok">УПД ушёл</span>' : '';
         return `${link(ship.link, `№ ${esc(ship.number || '—')}`)} ${chip(ship.state || 'Черновик')}${upd}${reg ? `<div class="saby-sub">${reg}</div>` : ''}`;
     }
-    function waybillCell(w) {
+    function waybillCell(p) {
+        const w = p.waybill;
         if (!w) return '<span class="saby-none">—</span>';
-        return `${link(w.link, `№ ${esc(w.number || '—')}`)} ${chip(w.state)}`;
+        const manual = p.waybill_ours ? '' : '<div class="saby-sub" title="Сделана в кабинете руками, не приложением">из кабинета</div>';
+        return `${link(w.link, `№ ${esc(w.number || '—')}`)} ${chip(w.state)}${manual}`;
     }
 
     // --- Шаги ---
@@ -133,10 +137,50 @@ document.addEventListener('DOMContentLoaded', () => {
             ].join('') : '',
             n > 0 && s.sent === n);
 
-        // 4. Заказ на перевозку и 5. ЭТрН — как у Лавки, следующим этапом
-        const step4 = stepCard(4, 'Заказ на перевозку', 'После отправки реализаций', soon('Скоро'), false, true);
-        const step5 = stepCard(5, 'ЭТрН', s.waybills ? `В кабинете ${s.waybills} из ${n}` : 'После заказа на перевозку',
-            soon('Скоро'), false, true);
+        // 4. Заказ на перевозку: свой на день Самоката, все точки одним рейсом — как у Лавки
+        const set = d.settings || {};
+        const tr = d.our_transport;
+        let step4;
+        if (tr) {
+            let state = `№ ${esc(tr.number || '—')} ${chip(tr.state)} · ${esc(tr.party || 'перевозчик не указан')}`;
+            if (tr.waiting) state += `<br><span class="saby-sub">Перевозчик ещё не подписал${tr.next_check_at ? ` · проверю ${timeText(tr.next_check_at).replace('сегодня ', '')}` : ''}</span>`;
+            const body = admin && tr.draft ? btn('transport-sign', 'Подписать', { primary: true })
+                : (tr.waiting ? btn('transport-check', 'Проверить') : '');
+            step4 = stepCard(4, 'Заказ на перевозку', state, body, !tr.draft);
+        } else {
+            const withOrder = t.filter(p => p.order_no);
+            const kgSum = withOrder.reduce((a, p) => a + (p.weight_kg || 0), 0);
+            const options = d.carriers.map(c => `<option value="${c.id}"${c.id === (carrierId || d.last_carrier_id) ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
+            step4 = stepCard(4, 'Заказ на перевозку', `Ещё не создан · точек в рейсе: ${withOrder.length}, ${kg(kgSum)}`,
+                admin ? (d.carriers.length ? `<select class="styled-text-input saby-carrier" id="carrierSelect" aria-label="Перевозчик">${options}</select>
+                    ${btn('transport-all', 'Создать и подписать', { primary: true, disabled: !withOrder.length })}
+                    ${set.hide_split_transport ? '' : btn('transport-create', 'Создать', { disabled: !withOrder.length })}
+                    ${set.hide_split_transport ? '' : btn('transport-sign', 'Подписать', { disabled: true, title: 'Сначала создайте заказ' })}`
+                    : '<span class="saby-none">Нет перевозчиков — добавьте в разделе «Перевозчики»</span>') : '');
+        }
+
+        // 5. ЭТрН по требованиям Самоката: после нашей подписи заказа на перевозку, одна накладная на точку
+        const ready = tr && !tr.draft;
+        const drafts = new Set(d.draft_waybills);
+        const toWaybill = t.filter(p => p.order_no && !p.waybill_ours);
+        const toSign = t.filter(p => drafts.has(p.order_no));
+        let state5;
+        if (!tr) state5 = 'После заказа на перевозку';
+        else if (!ready) state5 = 'После подписи заказа на перевозку';
+        else state5 = `Создано ${s.our_waybills} из ${n}${drafts.size ? `, не подписано ${drafts.size}` : ''}${sel}`;
+        let body5 = '';
+        if (admin) {
+            const check = btn('waybill-check', 'Проверить', { disabled: !toWaybill.length, title: 'Собрать ЭТрН и сверить с требованиями Самоката, ничего не создавая' });
+            if (!ready) body5 = check;
+            else if (!toWaybill.length && toSign.length) body5 = btn('waybill-sign', 'Подписать', { primary: true });
+            else body5 = [
+                btn('waybill-all', 'Создать и подписать', { primary: true, disabled: !toWaybill.length && !toSign.length }),
+                set.hide_split_waybills ? '' : btn('waybill-create', 'Создать', { disabled: !toWaybill.length }),
+                set.hide_split_waybills ? '' : btn('waybill-sign', 'Подписать', { disabled: !toSign.length, title: toSign.length ? '' : 'Нет неподписанных ЭТрН' }),
+                check,
+            ].join('');
+        }
+        const step5 = stepCard(5, 'ЭТрН', state5, body5, n > 0 && s.our_waybills === n && !drafts.size, !tr);
 
         return `<section class="saby-steps">${step1}${step2}${step3}${step4}${step5}</section>`;
     }
@@ -164,11 +208,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         <td class="sel-col"><span class="sel-box"><input type="checkbox" data-pick="${esc(rowKey(p))}" aria-label="Выбрать точку"${selected.has(rowKey(p)) ? ' checked' : ''}></span></td>
                         <td>
                             <div title="${esc(p.address || '')}">${esc(p.address_short)}</div>
-                            <div class="saby-sub">${fmtInt(p.quantity)} шт · ${fmtMoney(p.gross)}${p.gln ? ` · GLN ${esc(p.gln)}` : ''}</div>
+                            <div class="saby-sub">${fmtInt(p.quantity)} шт · ${kg(p.weight_kg)} · ${fmtMoney(p.gross)}${p.gln ? ` · GLN ${esc(p.gln)}` : ''}</div>
                         </td>
                         <td data-col="order"><div class="cell-main">${orderCell(p)}</div></td>
                         <td data-col="shipment"><div class="cell-main">${shipmentCell(p)}</div></td>
-                        <td data-col="waybill"><div class="cell-main">${waybillCell(p.waybill)}</div></td>
+                        <td data-col="waybill"><div class="cell-main">${waybillCell(p)}</div></td>
                     </tr>`).join('')}
                 </tbody>
             </table>
@@ -187,13 +231,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (r) {
             const errs = Object.entries(r.errors || {});
             if (errs.length) parts.push(`<div class="lavka-notice"><b>Не вышло:</b> ${errs.map(([k, v]) => `${esc(k)} — ${esc(v)}`).join('; ')}</div>`);
-            if (r.dry_run && (r.done || []).length) parts.push(`<div class="lavka-notice lavka-notice-info"><details>
+            if (r.dry_run && (r.done || []).length && /ЭТрН/.test(lastLabel)) parts.push(`<div class="lavka-notice lavka-notice-info"><b>ЭТрН собраны и сверены с требованиями Самоката, ничего не создано: ${r.done.length}.</b> Номер заказа — в ДрОГруз, грузополучатель — головное, в адресе доставки — GLN точки.</div>`);
+            else if (r.dry_run && (r.done || []).length) parts.push(`<div class="lavka-notice lavka-notice-info"><details>
                 <summary><b>УПД собраны, ничего не создано: ${r.done.length}.</b> Файлы — как ушли бы в СБИС</summary>
                 <ul class="samokat-files">${r.done.map(x => `<li>${esc(x)}${orderNo(x)
                     ? ` · <a href="/api/v1/samokat/shipments/preview?order_no=${encodeURIComponent(orderNo(x))}">файл УПД</a>` : ''}</li>`).join('')}</ul>
             </details></div>`);
             if ((r.notes || []).length) parts.push(`<div class="lavka-notice lavka-notice-info">${r.notes.map(esc).join('<br>')}</div>`);
         }
+        if (d.receiver_problem && d.our_transport) parts.push(`<div class="lavka-notice"><b>Для ЭТрН:</b> ${esc(d.receiver_problem)}.</div>`);
+        if ((d.unknown_weight || []).length) parts.push(`<div class="lavka-notice">Вес не определился — в перевозке посчитан нулём: ${d.unknown_weight.map(esc).join(', ')}. Укажите вес в карточке товара.</div>`);
         if (d.registry_free.length) parts.push(`<div class="lavka-notice lavka-notice-info">В реестре 1С за день есть строки без точки Самоката: ${d.registry_free.map(x => `№ ${esc(x.number)} ${esc(x.address || '')}`).join('; ')}. Это могут быть отгрузки Лавки.</div>`);
         notices.innerHTML = parts.join('');
     }
@@ -245,14 +292,46 @@ document.addEventListener('DOMContentLoaded', () => {
         waiting = false;
         SabyTask.decorate(content, { ...p, running: true }, day());
         finished = p;
+        lastLabel = p.label || '';
         if (p.result) lastResult = p.result;
         if (p.error) toast(p.error, 'error');
         else if (p.result) {
             const r = p.result, ok = (r.done || []).length, bad = Object.keys(r.errors || {}).length, skip = (r.skipped || []).length;
-            toast(`${r.dry_run ? 'Проверка' : 'Черновики'}: готово ${ok}${skip ? `, пропущено ${skip} — уже есть` : ''}${bad ? `, ошибок ${bad}` : ''}`, bad ? 'error' : 'ok');
+            toast(`${p.label || 'Готово'}: готово ${ok}${skip ? `, пропущено ${skip} — уже есть` : ''}${bad ? `, ошибок ${bad}` : ''}`, bad ? 'error' : 'ok');
         } else toast('Кабинет прочитан');
         setBusy(false);
         await load();
+    }
+
+    async function confirmCreate(what, count) {
+        return Hub.confirmDialog({
+            title: `Создать в СБИС: ${what}?`,
+            text: `Документы появятся в кабинете черновиками${count ? `, точек: ${count}` : ''}. Отправка — отдельно, подписью Рутокеном.`,
+            okText: 'Создать', danger: false,
+        });
+    }
+
+    // Подпись Рутокеном в браузере — тем же окном, что у Лавки; потом кабинет перечитывается фоном
+    async function sign(kind) {
+        const tr = data.our_transport;
+        const pool = kind === 'sm_waybill' ? data.draft_waybills : [];
+        const orders = targets().map(p => p.order_no).filter(o => pool.includes(o));
+        const count = selecting ? orders.length : pool.length;
+        const ok = await SabySign.sign({
+            day: day(), kind, orders: selecting ? orders : [],
+            title: kind === 'sm_transport' ? `Заказ на перевозку № ${tr ? tr.number : ''}` : 'ЭТрН Самоката',
+            what: kind === 'sm_transport' ? 'Подпись отправит заказ перевозчику.'
+                : `Подпись отметит погрузку и отправит накладные Самокату: ${count}.`,
+        });
+        if (ok) {
+            setBusy(true, 'Перечитываю день');
+            waiting = true;
+            const p = await SabyTask.wait('samokat');
+            waiting = false;
+            finished = p;
+            setBusy(false);
+            await load();
+        }
     }
 
     async function act(name) {
@@ -260,6 +339,35 @@ document.addEventListener('DOMContentLoaded', () => {
             if (name === 'registry') { el('registryInput').click(); return; }
             const orders = selecting ? targets().map(p => p.order_no).filter(Boolean) : [];
             if (name === 'check') { await run('/api/v1/samokat/shipments', { day: day(), dry_run: true, orders }); return; }
+            if (name === 'transport-check') {
+                setBusy(true, 'Спрашиваю СБИС');
+                const r = await api(`/api/v1/samokat/check-transport?day=${day()}`, { method: 'POST' });
+                toast(r.signed ? 'Перевозчик подписал заказ' : `Ещё не подписан: ${r.state || '—'}`, r.signed ? 'ok' : 'error');
+                setBusy(false);
+                await load();
+                return;
+            }
+            if (name === 'transport-create' || name === 'transport-all') {
+                const carrier = Number(el('carrierSelect')?.value || 0);
+                if (!carrier) { toast('Выберите перевозчика', 'error'); return; }
+                carrierId = carrier;
+                if (!(await confirmCreate('заказ на перевозку Самоката', targets().filter(p => p.order_no).length))) return;
+                await run('/api/v1/samokat/action', { day: day(), action: 'transport', orders, carrier_id: carrier });
+                if (name === 'transport-all' && data.our_transport && data.our_transport.draft) await sign('sm_transport');
+                return;
+            }
+            if (name === 'transport-sign') { await sign('sm_transport'); return; }
+            if (name === 'waybill-check') { await run('/api/v1/samokat/action', { day: day(), action: 'waybills_check', orders }); return; }
+            if (name === 'waybill-create' || name === 'waybill-all') {
+                const create = targets().filter(p => p.order_no && !p.waybill_ours);
+                if (create.length) {
+                    if (!(await confirmCreate('ЭТрН Самоката', create.length))) return;
+                    await run('/api/v1/samokat/action', { day: day(), action: 'waybills', orders });
+                } else if (name === 'waybill-create') return;
+                if (name === 'waybill-all' && data.draft_waybills.length) await sign('sm_waybill');
+                return;
+            }
+            if (name === 'waybill-sign') { await sign('sm_waybill'); return; }
             if (name === 'create') {
                 const count = targets().filter(p => !p.shipment && p.registry && p.order_no).length;
                 const ok = await Hub.confirmDialog({
@@ -293,6 +401,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     content.addEventListener('change', (e) => {
+        if (e.target.id === 'carrierSelect') { carrierId = Number(e.target.value); return; }
         if (e.target.id === 'selAll') {
             selected = e.target.checked ? new Set(data.points.map(rowKey)) : new Set();
             render();

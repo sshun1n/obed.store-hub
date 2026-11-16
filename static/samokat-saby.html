@@ -47,9 +47,24 @@
         <div id="content"><div class="empty-state">Загрузка…</div></div>
     </div>
 
+    <div class="modal" id="signModal" data-keep-open>
+        <div class="modal-content saby-sign" role="dialog" aria-modal="true" aria-labelledby="signTitle">
+            <span class="eyebrow">Подпись Рутокеном</span>
+            <h2 class="card-title-small" id="signTitle">Подписать</h2>
+            <p class="field-hint" id="signWhat"></p>
+            <label class="form-group" id="signCertBox" hidden><span>Сертификат</span><select class="styled-text-input" id="signCert"></select></label>
+            <p class="saby-sign-status" id="signStatus"></p>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" id="signCancel">Отмена</button>
+                <button type="button" class="btn btn-primary" id="signGo" disabled>Подписать и отправить</button>
+            </div>
+        </div>
+    </div>
+
     <script src="/static/hub-ui.js?v=1.10.0"></script>
     <script src="/static/period-picker.js?v=1.19.0"></script>
-    <script src="/static/samokat-saby.js?v=1.1.0"></script>
+    <script src="/static/saby-sign.js?v=1.24.0"></script>
+    <script src="/static/samokat-saby.js?v=1.3.0"></script>
     <div id="hubEnd" hidden></div>
 </body>
 </html>

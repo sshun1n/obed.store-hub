@@ -15,7 +15,8 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from src import api_lavka, api_saby, auth, database, lavka_mail, saby_client, samokat_saby, upd_registry
+from src import (api_lavka, api_saby, auth, database, lavka_mail, saby_actions, saby_client, samokat_saby,
+                 samokat_transport, upd_registry)
 from src.api_lavka import _money, compare_range, format_range, short_address, sort_key
 from src.api_v1 import product_title
 from src.database import get_db
@@ -179,10 +180,14 @@ def samokat_day(day: date, db: Session = Depends(get_db), user=Depends(auth.get_
     registry = db.query(database.UpdRow).filter(database.UpdRow.day == day).order_by(database.UpdRow.number).all()
     docs = db.query(database.SabyDoc).filter(database.SabyDoc.delivery_date == day).all()
     mine = [d for d in docs if d.kind.startswith("sm_")]
-    by_kind: Dict[str, Dict[str, database.SabyDoc]] = {"sm_order": {}, "sm_shipment": {}, "waybill": {}}
+    by_kind: Dict[str, Dict[str, database.SabyDoc]] = {"sm_order": {}, "sm_shipment": {}, "waybill": {},
+                                                       "sm_waybill": {}}
     for d in sorted(docs, key=lambda x: x.id):
         if d.kind in by_kind and d.order_no and d.state != "Удалён":
             by_kind[d.kind][d.order_no] = d
+    settings = saby_actions.get_settings(db)
+    weights, unknown_weight = samokat_transport.weights(db, [o for o in rows if o.order_no], settings.bag_weight_kg)
+    transport = samokat_transport.our_transport(db, day)
     used, points = set(), []
     for o in rows:
         address = o.point.address if o.point else ""
@@ -208,10 +213,19 @@ def samokat_day(day: date, db: Session = Depends(get_db), user=Depends(auth.get_
             if row is not None else None,
             "order": _doc(by_kind["sm_order"].get(o.order_no or "")),
             "shipment": ship,
-            "waybill": _doc(by_kind["waybill"].get(o.order_no or "")),
+            # Своя ЭТрН (создана приложением); иначе — сделанная в кабинете руками
+            "waybill": _doc(by_kind["sm_waybill"].get(o.order_no or "") or by_kind["waybill"].get(o.order_no or "")),
+            "waybill_ours": (o.order_no or "") in by_kind["sm_waybill"],
+            "weight_kg": float(weights.get(o.order_no, 0)) if o.order_no else 0,
         })
     checked = max((d.checked_at for d in mine), default=None)
     n = len(points)
+    waiting = transport is not None and transport in saby_actions.waiting_transports(db)
+    try:
+        samokat_transport.receiver(db)
+        receiver_problem = None
+    except saby_client.SabyError as exc:
+        receiver_problem = str(exc)
     return {
         "day": day.isoformat(), "label": format_range(day, day),
         "is_admin": user.role == "admin", "configured": saby_client.configured(),
@@ -225,8 +239,21 @@ def samokat_day(day: date, db: Session = Depends(get_db), user=Depends(auth.get_
                   "shipments": sum(1 for p in points if p["shipment"]),
                   "drafts": sum(1 for p in points if p["shipment"] and _draft(p["shipment"]["state"])),
                   "sent": sum(1 for p in points if p["shipment"] and not _draft(p["shipment"]["state"])),
-                  "waybills": sum(1 for p in points if p["waybill"])},
+                  "waybills": sum(1 for p in points if p["waybill"]),
+                  "our_waybills": sum(1 for p in points if p["waybill_ours"])},
         "points": points,
+        "settings": {"hide_split_transport": bool(settings.hide_split_transport),
+                     "hide_split_waybills": bool(settings.hide_split_waybills)},
+        "carriers": [{"id": c.id, "name": c.name} for c in db.query(database.Carrier)
+                     .filter(database.Carrier.is_active.is_(True)).order_by(database.Carrier.name)],
+        "last_carrier_id": settings.last_carrier_id,
+        "our_transport": None if transport is None else {
+            **_doc(transport), "party": transport.party, "draft": transport.state == saby_actions.DRAFT,
+            "signed_by_carrier": transport.state in saby_client.FINISHED, "waiting": waiting,
+            "next_check_at": api_saby._local(transport.next_check_at) if waiting else None},
+        "draft_waybills": [d.order_no for d in docs if d.kind == "sm_waybill" and d.state == saby_actions.DRAFT],
+        "unknown_weight": unknown_weight,
+        "receiver_problem": receiver_problem,
     }
 
 
@@ -259,6 +286,43 @@ def samokat_shipments(data: DraftsIn, db: Session = Depends(get_db), admin=Depen
                               data.orders or None, orders=targets):
         raise HTTPException(status_code=409, detail="Другая операция с СБИС ещё идёт, дождитесь её окончания")
     return {"started": True}
+
+
+class ActionIn(BaseModel):
+    day: date
+    action: str                  # transport | waybills | waybills_check
+    orders: List[str] = []       # пусто — все точки дня
+    carrier_id: Optional[int] = None
+
+
+@router.post("/action")
+def samokat_action(data: ActionIn, db: Session = Depends(get_db), admin=Depends(auth.admin_only)):
+    """Заказ на перевозку и ЭТрН Самоката — фоном, черновиками. Только админ, только по кнопке."""
+    if data.action not in ("transport", "waybills", "waybills_check"):
+        raise HTTPException(status_code=400, detail="Неизвестное действие")
+    if not saby_client.configured():
+        raise HTTPException(status_code=400, detail="Не заданы SABY_LOGIN и SABY_PASSWORD в .env сервера")
+    if data.action == "transport" and not data.carrier_id:
+        raise HTTPException(status_code=400, detail="Выберите перевозчика")
+    targets = data.orders or [o.order_no for o in db.query(Order)
+                              .filter(Order.delivery_date == data.day, Order.order_no.isnot(None))]
+    if not samokat_saby.start(data.day, admin.login, data.action, data.orders or None, orders=targets,
+                              carrier_id=data.carrier_id):
+        raise HTTPException(status_code=409, detail="Другая операция с СБИС ещё идёт, дождитесь её окончания")
+    return {"started": True}
+
+
+@router.post("/check-transport")
+def samokat_check_transport(day: date, db: Session = Depends(get_db), user=Depends(auth.get_current_user)):
+    """Подписал ли перевозчик заказ на перевозку Самоката этого дня."""
+    doc = samokat_transport.our_transport(db, day)
+    if doc is None:
+        raise HTTPException(status_code=404, detail="На этот день заказа на перевозку Самоката нет")
+    try:
+        state = saby_actions.check_transport(doc.saby_id)
+    except saby_client.SabyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"state": state, "signed": state in saby_client.FINISHED}
 
 
 @router.get("/shipments/status")

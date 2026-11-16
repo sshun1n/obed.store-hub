@@ -339,7 +339,11 @@ def saby_sign_send(data: SignSendIn, admin=Depends(auth.admin_only)):
     except saby_client.SabyError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     # Перечитываем день фоном: после отправки состояния меняются
-    saby_sync.start(result["day"], "Чтение СБИС")
+    if result.get("kind", "").startswith("sm_"):
+        from src import samokat_saby
+        samokat_saby.start(result["day"], admin.login, "refresh")
+    else:
+        saby_sync.start(result["day"], "Чтение СБИС")
     return {"sent": result["sent"], "errors": result["errors"]}
 
 

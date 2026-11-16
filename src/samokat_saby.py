@@ -269,6 +269,11 @@ def refresh_day(day: date, step: Callable = _step) -> Dict:
             if doc.kind == SHIPMENT_KIND and doc.saby_id not in alive:
                 doc.state = "Удалён"
 
+        # Наши заказ на перевозку и ЭТрН — состояния из списков TMS
+        from src import samokat_transport
+        step("Смотрю перевозку и ЭТрН")
+        samokat_transport.refresh(sid, db, day, store)
+
         step("Смотрю реализации в списке за день")
         by_id = {i["Идентификатор"]: i for i in sc.list_documents(sid, sc.DOCS_URL, sc.SHIPMENT_TYPE,
                                                                    start=day, end=day)}
@@ -393,16 +398,27 @@ def create_drafts(day: date, user: str, dry_run: bool, only: Optional[List[str]]
 # --- Фоновая операция ---
 
 LABELS = {"refresh": "Чтение СБИС · Самокат", "check": "Проверка УПД · Самокат",
-          "create": "Черновики реализаций · Самокат"}
+          "create": "Черновики реализаций · Самокат", "transport": "Заказ на перевозку · Самокат",
+          "waybills": "Создание ЭТрН · Самокат", "waybills_check": "Проверка ЭТрН · Самокат"}
+ROW_KINDS = {"check": "shipment", "create": "shipment", "waybills": "waybill", "waybills_check": "waybill"}
 
 
-def _worker(day: date, user: str, mode: str, only: Optional[List[str]]) -> None:
+def _run(day: date, user: str, mode: str, only: Optional[List[str]], carrier_id: Optional[int]) -> Dict:
+    from src import samokat_transport as st
+    if mode in ("check", "create"):
+        return create_drafts(day, user, mode == "check", only)
+    if mode == "transport":
+        return st.create_transport(day, only or [], carrier_id, user)
+    return st.create_waybills(day, only or [], user, dry_run=mode == "waybills_check")
+
+
+def _worker(day: date, user: str, mode: str, only: Optional[List[str]], carrier_id: Optional[int] = None) -> None:
     try:
         # Одна операция с кабинетом за раз — общий замок со страницей «СБИС»
         with saby_sync._lock:
             try:
                 if mode != "refresh":
-                    _progress["result"] = create_drafts(day, user, mode == "check", only)
+                    _progress["result"] = _run(day, user, mode, only, carrier_id)
             finally:
                 # Перечитываем всегда: часть черновиков могла успеть создаться до ошибки
                 _step("Перечитываю день")
@@ -418,14 +434,15 @@ def _worker(day: date, user: str, mode: str, only: Optional[List[str]]) -> None:
         _progress["finished_at"] = sheet_sync.local_now().isoformat(timespec="seconds")
 
 
-def start(day: date, user: str, mode: str, only: Optional[List[str]] = None, orders=()) -> bool:
+def start(day: date, user: str, mode: str, only: Optional[List[str]] = None, orders=(),
+          carrier_id: Optional[int] = None) -> bool:
     """mode: refresh — прочитать кабинет; check — собрать УПД без записи; create — черновики.
     orders — точки, по которым пойдёт работа: их строки на странице покажут ход."""
     if saby_sync.busy():
         return False
     _progress.update(running=True, day=day.isoformat(), label=LABELS[mode], step="Начинаю", done=0, total=0,
                      error=None, result=None, kind="", rows={})
-    if mode != "refresh":
-        saby_sync.track(_progress, "shipment", orders)
-    threading.Thread(target=_worker, args=(day, user, mode, only), name="samokat-saby", daemon=True).start()
+    if mode in ROW_KINDS:
+        saby_sync.track(_progress, ROW_KINDS[mode], orders)
+    threading.Thread(target=_worker, args=(day, user, mode, only, carrier_id), name="samokat-saby", daemon=True).start()
     return True
