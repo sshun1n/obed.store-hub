@@ -149,10 +149,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 : (tr.waiting ? btn('transport-check', 'Проверить') : '');
             step3 = stepCard(3, 'Заказ на перевозку', state, body3, !tr.draft);
         } else {
-            const options = d.carriers.map(c => `<option value="${c.id}"${c.id === (carrierId || d.last_carrier_id) ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
             step3 = stepCard(3, 'Заказ на перевозку', `Ещё не создан · точек в рейсе: ${t.length}, ${kg(t.reduce((a, p) => a + p.weight_kg, 0))}`,
-                admin ? (d.carriers.length ? `<select class="styled-text-input saby-carrier" id="carrierSelect" aria-label="Перевозчик">${options}</select>
-                    ${btn('transport-all', 'Создать и подписать', { primary: true, disabled: !t.length })}
+                admin ? (d.carriers.length ? `${btn('transport-all', 'Создать и подписать', { primary: true, disabled: !t.length })}
                     ${set.hide_split_transport ? '' : btn('transport-create', 'Создать', { disabled: !t.length })}
                     ${set.hide_split_transport ? '' : btn('transport-sign', 'Подписать', { disabled: true, title: 'Сначала создайте заказ' })}`
                     : '<span class="saby-none">Нет перевозчиков — добавьте в разделе «Перевозчики»</span>') : '');
@@ -321,19 +319,25 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    async function sign(kind) {
+    // Окно подписи. extra.create — сначала создать документ в этом же окне (extra.sign: false —
+    // только создать), extra.carriers — выбор перевозчика там же
+    async function sign(kind, extra = {}) {
         const tr = data.our_transport;
         const pool = kind === 'waybill' ? data.draft_waybills : kind === 'upd' ? data.upd_ready : [];
-        const orders = targets().map(p => p.order_no).filter(o => pool.includes(o));
-        const count = selecting ? orders.length : pool.length;
+        // Документов ещё нет — подписываем то, что создастся по выбранным точкам
+        const orders = targets().map(p => p.order_no).filter(o => extra.create || pool.includes(o));
+        const count = selecting || extra.create ? orders.length : pool.length;
+        const signNow = extra.sign !== false;
         const ok = await SabySign.sign({
             day: day(), kind, orders: selecting ? orders : [],
-            title: kind === 'transport' ? `Заказ на перевозку № ${tr ? tr.number : ''}` : kind === 'upd' ? 'УПД' : 'ЭТрН',
-            what: kind === 'transport' ? 'Подпись отправит заказ перевозчику.'
+            create: extra.create || null, carriers: extra.carriers || null, carrierId: extra.carrierId || null, sign: signNow,
+            title: extra.title || (kind === 'transport' ? `Заказ на перевозку № ${tr ? tr.number : ''}` : kind === 'upd' ? 'УПД' : 'ЭТрН'),
+            what: extra.what || (kind === 'transport' ? 'Подпись отправит заказ перевозчику.'
                 : kind === 'upd' ? `СБИС сформирует УПД из реализаций и отправит их Лавке: ${count}. Сначала внесите в СБИС изменения по бумажным накладным — отправленный УПД не отзывается, только исправляется корректировкой.`
-                : `Подпись отметит погрузку и отправит накладные Лавке: ${count}.`,
+                : `Подпись отметит погрузку и отправит накладные Лавке: ${count}.`),
         });
-        if (ok) { setBusy(true, 'Перечитываю день'); await waitTask(); setBusy(false); await load(); }
+        if (ok && signNow) { setBusy(true, 'Перечитываю день'); await waitTask(); setBusy(false); await load(); }
+        else if (extra.create) await load();
     }
 
     async function act(name) {
@@ -366,17 +370,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             if (name === 'transport-create' || name === 'transport-all') {
-                const carrier = Number(el('carrierSelect')?.value || 0);
-                if (!carrier) { toast('Выберите перевозчика', 'error'); return; }
-                carrierId = carrier;
-                if (!(await confirmCreate('заказ на перевозку', t.length))) return;
-                if (!(await runTask({ action: 'create_transport', carrier_id: carrier }))) return;
-                if (name === 'transport-all' && data.our_transport && data.our_transport.draft) await sign('transport');
+                const signNow = name === 'transport-all';
+                await sign('transport', {
+                    sign: signNow, carriers: data.carriers, carrierId: carrierId || data.last_carrier_id,
+                    title: 'Заказ на перевозку',
+                    what: `Один рейс на день: точек ${t.length}, ${kg(t.reduce((a, p) => a + p.weight_kg, 0))}. Это настоящий документ в общем кабинете${signNow ? '; подпись сразу отправит его перевозчику' : ''}.`,
+                    create: (carrier) => { carrierId = carrier; return runTask({ action: 'create_transport', carrier_id: carrier }); },
+                });
                 return;
             }
             if (name === 'transport-sign') { await sign('transport'); return; }
             if (name === 'waybill-create' || name === 'waybill-all') {
                 const create = t.filter(p => !p.waybill);
+                if (create.length && name === 'waybill-all') {
+                    // Создать и подписать — одним окном: сертификат выбирается до создания
+                    await sign('waybill', {
+                        create: () => runTask({ action: 'create_waybills' }), title: 'ЭТрН',
+                        what: `Создам накладные по точкам (${create.length}) и подпишу: погрузка отметится, накладные уйдут Лавке.`,
+                    });
+                    return;
+                }
                 if (create.length) {
                     if (!(await confirmCreate('ЭТрН', create.length))) return;
                     if (!(await runTask({ action: 'create_waybills' }))) return;
@@ -410,7 +423,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     content.addEventListener('change', (e) => {
-        if (e.target.id === 'carrierSelect') { carrierId = Number(e.target.value); return; }
         if (e.target.id === 'selAll') {
             selected = e.target.checked ? new Set(data.points.map(p => p.order_no)) : new Set();
             render();

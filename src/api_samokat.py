@@ -243,6 +243,7 @@ def samokat_day(day: date, db: Session = Depends(get_db), user=Depends(auth.get_
                   "our_waybills": sum(1 for p in points if p["waybill_ours"])},
         "points": points,
         "settings": {"hide_split_shipments": bool(settings.hide_split_shipments),
+                     "hide_check": bool(settings.hide_check),
                      "hide_split_transport": bool(settings.hide_split_transport),
                      "hide_split_waybills": bool(settings.hide_split_waybills)},
         "carriers": [{"id": c.id, "name": c.name} for c in db.query(database.Carrier)

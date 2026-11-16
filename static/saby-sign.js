@@ -5,6 +5,11 @@
  * Плагин работает только на https:// и localhost.
  *
  *   await SabySign.sign({ day, kind: 'transport' | 'waybill' | 'upd', orders: [...], title })  // true — отправлено
+ *
+ * То же окно создаёт документ перед подписью: create — функция, которая создаёт его
+ * (вернула true — создан), carriers — список перевозчиков для выбора в окне, sign: false —
+ * только создать, без подписи. Так «Создать и подписать» — одно окно: перевозчик,
+ * сертификат и одна кнопка.
  */
 window.SabySign = (() => {
     const REMEMBER = 'obed.sign.thumbprint';
@@ -70,21 +75,41 @@ window.SabySign = (() => {
         return signature.replace(/\s+/g, '');
     }
 
-    function sign({ day, kind, orders = [], title, what = '' }) {
+    // Выбор перевозчика — в том же окне, над сертификатом. Разметки в страницах нет: добавляем сами
+    function carrierBox() {
+        let box = el('signCarrierBox');
+        if (!box) {
+            el('signCertBox').insertAdjacentHTML('beforebegin',
+                '<label class="form-group" id="signCarrierBox" hidden><span>Перевозчик</span><select class="styled-text-input" id="signCarrier"></select></label>');
+            box = el('signCarrierBox');
+        }
+        return box;
+    }
+
+    function sign({ day, kind, orders = [], title, what = '', create = null, carriers = null, carrierId = null, sign: signNow = true }) {
         const modal = el('signModal');
         const status = el('signStatus');
         const select = el('signCert');
         const go = el('signGo');
         const cancel = el('signCancel');
+        const carrierWrap = carrierBox();
+        const carrier = el('signCarrier');
         let certs = [];
         let busy = false;
         const say = (text, bad = false) => { status.textContent = text; status.classList.toggle('saby-bad', bad); };
+        const goText = () => (create ? (signNow ? 'Создать и подписать' : 'Создать') : 'Подписать и отправить');
 
         el('signTitle').textContent = title;
         el('signWhat').textContent = what;
         el('signCertBox').hidden = true;
-        go.disabled = true;
+        carrierWrap.hidden = !carriers;
+        if (carriers) {
+            carrier.innerHTML = carriers.map(c => `<option value="${c.id}"${c.id === carrierId ? ' selected' : ''}>${Hub.esc(c.name)}</option>`).join('');
+        }
+        go.textContent = goText();
+        go.disabled = signNow;
         cancel.disabled = false;
+        say('');
         Hub.openModal(modal);
 
         return new Promise((resolve) => {
@@ -96,7 +121,7 @@ window.SabySign = (() => {
             };
             cancel.onclick = () => { if (!busy) finish(false); };
 
-            (async () => {
+            if (signNow) (async () => {
                 say('Подключаюсь к плагину КриптоПро…');
                 let pluginOk = false;
                 try {
@@ -118,11 +143,21 @@ window.SabySign = (() => {
 
             go.onclick = async () => {
                 const chosen = certs.find(c => c.thumbprint === select.value);
-                if (!chosen || busy) return;
+                if ((signNow && !chosen) || busy) return;
                 busy = true;
                 go.disabled = true;
                 cancel.disabled = true;
                 try {
+                    if (create) {
+                        say('Создаю в СБИС… ход — в окошке в углу');
+                        const made = await create(carriers ? Number(carrier.value) : null);
+                        if (!made) throw new Error('документ не создан — причина в сообщении на странице');
+                        // Создан: повторное нажатие только подписывает, второй раз не создаёт
+                        create = null;
+                        carrierWrap.hidden = true;
+                        go.textContent = goText();
+                        if (!signNow) { busy = false; finish(true); return; }
+                    }
                     say('Готовлю документы в СБИС…');
                     const prepared = await Hub.api('/api/v1/saby/sign/prepare', { method: 'POST', body: { day, kind, orders, thumbprint: chosen.thumbprint } });
                     const files = prepared.documents.flatMap(d => d.files);

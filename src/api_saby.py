@@ -210,6 +210,7 @@ class SettingsIn(BaseModel):
     hide_split_shipments: bool = False
     hide_split_transport: bool = False
     hide_split_waybills: bool = False
+    hide_check: bool = False
     pickup_address: str = Field(..., min_length=5, max_length=300)
     pickup_time: str = Field(..., pattern=r"^\d{2}:\d{2}$")
     departure_time: str = Field(..., pattern=r"^\d{2}:\d{2}$")

@@ -26,6 +26,7 @@ window.SabySettings = (() => {
                         ${toggle(scope === 'lavka' ? 'Реализации: прятать «Создать» и «Провести»' : 'Реализации: прятать «Создать» и «Подписать»', 'hide_split_shipments')}
                         ${toggle('Заказ на перевозку: прятать «Создать» и «Подписать»', 'hide_split_transport')}
                         ${toggle('ЭТрН: прятать «Создать» и «Подписать»', 'hide_split_waybills')}
+                        ${scope === 'samokat' ? toggle('Прятать «Проверить» — сборку документов без создания', 'hide_check') : ''}
                     </section>
                     <section>
                         <h3>Погрузка и выгрузка</h3>

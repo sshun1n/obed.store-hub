@@ -46,7 +46,7 @@ class ActionError(sc.SabyError):
 SETTINGS_IDS = {"lavka": 1, "samokat": 2}
 # Поля, которые у Самоката свои: перевозка и ЭТрН. Остальное (автообновление,
 # проверка подписи перевозчика) — общее, в строке Лавки
-OWN_FIELDS = ("hide_split_shipments", "hide_split_transport", "hide_split_waybills", "pickup_address", "pickup_time",
+OWN_FIELDS = ("hide_split_shipments", "hide_split_transport", "hide_split_waybills", "hide_check", "pickup_address", "pickup_time",
               "departure_time", "unload_time", "cargo_name", "cargo_state", "bag_weight_kg", "place_volume_m3",
               "bag_length_cm", "bag_width_cm", "bag_height_cm", "temp_min", "temp_max", "sanitary_norms",
               "vehicle_type", "body_type", "loading_type", "capacity_t", "volume_m3", "last_carrier_id")

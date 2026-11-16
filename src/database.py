@@ -377,6 +377,7 @@ class SabySettings(Base):
     hide_split_shipments = Column(Boolean, default=False)   # прятать «Создать» и «Провести» по отдельности
     hide_split_transport = Column(Boolean, default=False)
     hide_split_waybills = Column(Boolean, default=False)
+    hide_check = Column(Boolean, default=False)              # прятать «Проверить» (сборка без создания)
     poll_minutes = Column(Integer, default=20)              # проверка подписи перевозчика
     # Автообновление страницы из кабинета: те же поля расписания, что у почты и таблицы
     sync_enabled = Column(Boolean, default=True)

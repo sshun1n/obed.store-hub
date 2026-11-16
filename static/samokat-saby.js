@@ -134,7 +134,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const toCreate = t.filter(p => !p.shipment && p.registry && p.order_no);
         const shipDrafts = new Set(d.draft_shipments || []);
         const toSend = t.filter(p => shipDrafts.has(p.order_no));
-        const check = btn('check', 'Проверить', { title: 'Собрать УПД по точкам, ничего не создавая — можно скачать файлы' });
+        const check = set3.hide_check ? '' : btn('check', 'Проверить', { title: 'Собрать УПД по точкам, ничего не создавая — можно скачать файлы' });
         let body3 = '';
         if (admin && s.sent < n) {
             body3 = !toCreate.length && toSend.length ? btn('ship-sign', 'Подписать', { primary: true }) + check : [
@@ -163,10 +163,8 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             const withOrder = t.filter(p => p.order_no);
             const kgSum = withOrder.reduce((a, p) => a + (p.weight_kg || 0), 0);
-            const options = d.carriers.map(c => `<option value="${c.id}"${c.id === (carrierId || d.last_carrier_id) ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
             step4 = stepCard(4, 'Заказ на перевозку', `Ещё не создан · точек в рейсе: ${withOrder.length}, ${kg(kgSum)}`,
-                admin ? (d.carriers.length ? `<select class="styled-text-input saby-carrier" id="carrierSelect" aria-label="Перевозчик">${options}</select>
-                    ${btn('transport-all', 'Создать и подписать', { primary: true, disabled: !withOrder.length })}
+                admin ? (d.carriers.length ? `${btn('transport-all', 'Создать и подписать', { primary: true, disabled: !withOrder.length })}
                     ${set.hide_split_transport ? '' : btn('transport-create', 'Создать', { disabled: !withOrder.length })}
                     ${set.hide_split_transport ? '' : btn('transport-sign', 'Подписать', { disabled: true, title: 'Сначала создайте заказ' })}`
                     : '<span class="saby-none">Нет перевозчиков — добавьте в разделе «Перевозчики»</span>') : '');
@@ -183,7 +181,7 @@ document.addEventListener('DOMContentLoaded', () => {
         else state5 = `Создано ${s.our_waybills} из ${n}${drafts.size ? `, не подписано ${drafts.size}` : ''}${sel}`;
         let body5 = '';
         if (admin) {
-            const check = btn('waybill-check', 'Проверить', { disabled: !toWaybill.length, title: 'Собрать ЭТрН и сверить с требованиями Самоката, ничего не создавая' });
+            const check = set.hide_check ? '' : btn('waybill-check', 'Проверить', { disabled: !toWaybill.length, title: 'Собрать ЭТрН и сверить с требованиями Самоката, ничего не создавая' });
             if (!ready) body5 = check;
             else if (!toWaybill.length && toSign.length) body5 = btn('waybill-sign', 'Подписать', { primary: true });
             else body5 = [
@@ -315,6 +313,8 @@ document.addEventListener('DOMContentLoaded', () => {
         } else toast('Кабинет прочитан');
         setBusy(false);
         await load();
+        // Для окна «Создать и подписать»: создано без ошибок — можно подписывать
+        return !p.error && !Object.keys((p.result || {}).errors || {}).length || !!((p.result || {}).done || []).length;
     }
 
     async function confirmCreate(what, count) {
@@ -326,20 +326,25 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Подпись Рутокеном в браузере — тем же окном, что у Лавки; потом кабинет перечитывается фоном
-    async function sign(kind) {
+    // Окно подписи. extra.create — сначала создать документ в этом же окне (extra.sign: false —
+    // только создать), extra.carriers — выбор перевозчика там же
+    async function sign(kind, extra = {}) {
         const tr = data.our_transport;
         const pool = kind === 'sm_waybill' ? data.draft_waybills : kind === 'sm_upd' ? (data.draft_shipments || []) : [];
-        const orders = targets().map(p => p.order_no).filter(o => pool.includes(o));
-        const count = selecting ? orders.length : pool.length;
+        const orders = targets().map(p => p.order_no).filter(o => o && (extra.create || pool.includes(o)));
+        const count = selecting || extra.create ? orders.length : pool.length;
+        const signNow = extra.sign !== false;
         const ok = await SabySign.sign({
             day: day(), kind, orders: selecting ? orders : [],
-            title: kind === 'sm_transport' ? `Заказ на перевозку № ${tr ? tr.number : ''}`
-                : kind === 'sm_upd' ? 'Реализации с УПД' : 'ЭТрН Самоката',
-            what: kind === 'sm_transport' ? 'Подпись отправит заказ перевозчику.'
+            create: extra.create || null, carriers: extra.carriers || null, carrierId: extra.carrierId || null, sign: signNow,
+            title: extra.title || (kind === 'sm_transport' ? `Заказ на перевозку № ${tr ? tr.number : ''}`
+                : kind === 'sm_upd' ? 'Реализации с УПД' : 'ЭТрН Самоката'),
+            what: extra.what || (kind === 'sm_transport' ? 'Подпись отправит заказ перевозчику.'
                 : kind === 'sm_upd' ? `Подпись отправит реализации с УПД Самокату: ${count}. Отправленный УПД не отзывается — только исправляется корректировкой.`
-                : `Подпись отметит погрузку и отправит накладные Самокату: ${count}.`,
+                : `Подпись отметит погрузку и отправит накладные Самокату: ${count}.`),
         });
-        if (ok) {
+        if (!ok || !signNow) { if (extra.create) await load(); return; }
+        {
             setBusy(true, 'Перечитываю день');
             waiting = true;
             const p = await SabyTask.wait('samokat');
@@ -364,18 +369,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             if (name === 'transport-create' || name === 'transport-all') {
-                const carrier = Number(el('carrierSelect')?.value || 0);
-                if (!carrier) { toast('Выберите перевозчика', 'error'); return; }
-                carrierId = carrier;
-                if (!(await confirmCreate('заказ на перевозку Самоката', targets().filter(p => p.order_no).length))) return;
-                await run('/api/v1/samokat/action', { day: day(), action: 'transport', orders, carrier_id: carrier });
-                if (name === 'transport-all' && data.our_transport && data.our_transport.draft) await sign('sm_transport');
+                const signNow = name === 'transport-all';
+                const stops = targets().filter(p => p.order_no);
+                await sign('sm_transport', {
+                    sign: signNow, carriers: data.carriers, carrierId: carrierId || data.last_carrier_id,
+                    title: 'Заказ на перевозку Самоката',
+                    what: `Один рейс на день: точек ${stops.length}, ${kg(stops.reduce((a, p) => a + (p.weight_kg || 0), 0))}. Это настоящий документ в общем кабинете${signNow ? '; подпись сразу отправит его перевозчику' : ''}.`,
+                    create: (carrier) => { carrierId = carrier; return run('/api/v1/samokat/action', { day: day(), action: 'transport', orders, carrier_id: carrier }); },
+                });
                 return;
             }
             if (name === 'transport-sign') { await sign('sm_transport'); return; }
             if (name === 'waybill-check') { await run('/api/v1/samokat/action', { day: day(), action: 'waybills_check', orders }); return; }
             if (name === 'waybill-create' || name === 'waybill-all') {
                 const create = targets().filter(p => p.order_no && !p.waybill_ours);
+                if (create.length && name === 'waybill-all') {
+                    await sign('sm_waybill', {
+                        create: () => run('/api/v1/samokat/action', { day: day(), action: 'waybills', orders }), title: 'ЭТрН Самоката',
+                        what: `Создам накладные по точкам (${create.length}) по требованиям Самоката и подпишу: погрузка отметится, накладные уйдут Самокату.`,
+                    });
+                    return;
+                }
                 if (create.length) {
                     if (!(await confirmCreate('ЭТрН Самоката', create.length))) return;
                     await run('/api/v1/samokat/action', { day: day(), action: 'waybills', orders });
@@ -388,8 +402,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (name === 'ship-all') {
                 const create = targets().filter(p => !p.shipment && p.registry && p.order_no);
                 if (create.length) {
-                    if (!(await confirmCreate('реализации с УПД', create.length))) return;
-                    await run('/api/v1/samokat/shipments', { day: day(), dry_run: false, orders });
+                    await sign('sm_upd', {
+                        create: () => run('/api/v1/samokat/shipments', { day: day(), dry_run: false, orders }), title: 'Реализации с УПД',
+                        what: `Создам реализации с УПД по точкам (${create.length}) и подпишу: они уйдут Самокату. Отправленный УПД не отзывается — только исправляется корректировкой.`,
+                    });
+                    return;
                 }
                 if ((data.draft_shipments || []).length) await sign('sm_upd');
                 return;
@@ -427,7 +444,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     content.addEventListener('change', (e) => {
-        if (e.target.id === 'carrierSelect') { carrierId = Number(e.target.value); return; }
         if (e.target.id === 'selAll') {
             selected = e.target.checked ? new Set(data.points.map(rowKey)) : new Set();
             render();
