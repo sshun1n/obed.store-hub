@@ -888,10 +888,8 @@ def start_poller() -> None:
                 auto_sync_due()
             except Exception as exc:
                 logger.error(f"Ошибка автообновления СБИС: {exc}", exc_info=True)
-            try:
-                poll_due()
-            except Exception as exc:
-                logger.error(f"Ошибка опроса подписи перевозчика: {exc}", exc_info=True)
+            # Подпись перевозчика отдельно не опрашиваем (просьба владельца 17.11):
+            # состояние заказа на перевозку перечитывает автообновление дня
             time.sleep(60)
 
     threading.Thread(target=loop, name="saby-poll", daemon=True).start()

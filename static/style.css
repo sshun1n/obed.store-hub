@@ -2344,3 +2344,9 @@ body:has(.saby-task.show) .toast-host { bottom: 112px; }
     .saby-task, .saby-task-bar span { transition: none; }
     .saby-task-bar span::after { animation: none; }
 }
+
+/* Документ в плитке шага: мелкая ссылка в кабинет, под ней состояние */
+.saby-step-doc { color: var(--ink-soft); text-decoration: none; }
+.saby-step-doc span { font-size: 0.72rem; color: var(--muted); }
+.saby-step-doc:hover, .saby-step-doc:hover span { color: var(--red); }
+.saby-step-status { display: block; margin-top: 6px; }

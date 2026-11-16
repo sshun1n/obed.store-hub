@@ -143,10 +143,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const tr = d.our_transport;
         let step3;
         if (tr) {
-            let state = `№ ${esc(tr.number || '—')} ${chip(tr.state)} · ${esc(tr.party || 'перевозчик не указан')}`;
-            if (tr.waiting) state += `<br><span class="saby-sub">Перевозчик ещё не подписал${tr.next_check_at ? ` · проверю ${timeText(tr.next_check_at).replace('сегодня ', '')}` : ''}</span>`;
-            const body3 = admin && tr.draft ? btn('transport-sign', 'Подписать', { primary: true })
-                : (tr.waiting ? btn('transport-check', 'Проверить') : '');
+            // Номер и перевозчик — ссылкой в кабинет, под ними состояние. Подпись перевозчика
+            // проверяет общее автообновление, отдельной кнопки нет
+            const text = `№ ${esc(tr.number || '—')} · ${esc(tr.party || 'перевозчик не указан')}`;
+            const doc = tr.link ? `<a class="saby-step-doc" href="${esc(tr.link)}" target="_blank" rel="noopener" title="Открыть в кабинете">${text} <span aria-hidden="true">↗</span></a>` : text;
+            const status = tr.waiting ? '<span class="st st-draft" title="Заказ отправлен, перевозчик ещё не подписал">ждёт подписи перевозчика</span>' : chip(tr.state);
+            const state = `${doc}<span class="saby-step-status">${status}</span>`;
+            const body3 = admin && tr.draft ? btn('transport-sign', 'Подписать', { primary: true }) : '';
             step3 = stepCard(3, 'Заказ на перевозку', state, body3, !tr.draft);
         } else {
             step3 = stepCard(3, 'Заказ на перевозку', `Ещё не создан · точек в рейсе: ${t.length}, ${kg(t.reduce((a, p) => a + p.weight_kg, 0))}`,
