@@ -172,6 +172,10 @@ def create_drafts(day: date, user: str, dry_run: bool, only: Optional[List[str]]
                 if sc.consequences(card, sc.SHIPMENT_TYPE):
                     result["skipped"].append(label)        # реализация уже есть — ничего не трогаем
                     continue
+                if ours is not None and ours.shipment_number:
+                    # У заказа в СБИС реализации нет, а у нас записана — её удалили в кабинете
+                    result["notes"].append(f"{label}: реализации № {ours.shipment_number} в СБИС больше нет — удалена")
+                    ours.shipment_id = ours.shipment_number = ours.shipment_state = ours.shipment_created_by = None
                 row = _registry_row(db, day, address, used)
                 if row is None:
                     raise SamokatError("нет строки в реестре 1С по этому адресу — загрузите реестр за день")
