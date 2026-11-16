@@ -124,7 +124,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 2. Реестр 1С
         const step2 = stepCard(2, 'Реестр 1С',
-            d.registry_rows ? `Строк для точек: ${s.registry} из ${n}` : 'Не загружен — без него не будет номеров реализаций',
+            d.registry_rows ? `Строк для точек: ${s.registry} из ${n}` : 'Не загружен',
             admin ? btn('registry', d.registry_rows ? 'Заменить реестр' : 'Загрузить реестр', { primary: !d.registry_rows }) : '',
             s.registry === n);
 
