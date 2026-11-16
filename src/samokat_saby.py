@@ -118,6 +118,14 @@ def _samokat_orders(sid: str, day: date) -> List[Tuple[dict, dict, str]]:
     return found
 
 
+def _time(xml: str) -> str:
+    """Время поставки из заказа в виде СБИС: «00:00» → «00.00.00»."""
+    doc = samokat_upd.ET.fromstring(xml.encode("windows-1251")).find("Документ")
+    parts = ((doc.get("СрокВремя") if doc is not None else "") or "00:00").split(":")
+    parts = (parts + ["00", "00"])[:3]
+    return ".".join(p.zfill(2) for p in parts)
+
+
 def _point_of(xml: str) -> Tuple[str, str, str]:
     """Адрес, GLN и КПП точки из заказа."""
     doc = samokat_upd.ET.fromstring(xml.encode("windows-1251")).find("Документ")
@@ -214,11 +222,13 @@ def create_drafts(day: date, user: str, dry_run: bool, only: Optional[List[str]]
                 doc = sc.write_document(sid, sc.DOCS_URL, {
                     "Тип": sc.SHIPMENT_TYPE, "Номер": row.number, "Дата": day.strftime("%d.%m.%Y"),
                     "Примечание": address,
-                    # Срок поставки из заказа: без него в карточке реализации поле пустое
-                    "Срок": day.strftime("%d.%m.%Y"),
+                    # Срок поставки — как в реализациях, которые СБИС делает сам из заказа:
+                    # в Расширении. Поле «Срок» документа СБИС показывает как срок оплаты
+                    "Расширение": {"СрокПоставки": f"{day.strftime('%d.%m.%Y')} {_time(xml)}"},
                     "НашаОрганизация": card.get("НашаОрганизация") or {},
                     "Контрагент": contractor,
-                    "ДокументОснование": [{"ВидСвязи": "Обычная связь", "Документ": {"Идентификатор": item["Идентификатор"]}}],
+                    # Связь «Отгрузка», как у СБИС: по ней заказ считает отгруженное
+                    "ДокументОснование": [{"ВидСвязи": "Отгрузка", "Документ": {"Идентификатор": item["Идентификатор"]}}],
                     "Вложение": [{"Файл": {"Имя": f"{name}.xml", "ДвоичныеДанные": base64.b64encode(content).decode()}}],
                 })
                 if ours is not None:

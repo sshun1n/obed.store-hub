@@ -179,6 +179,8 @@ def build(order_xml: str, template_xml: str, *, number: str, day: date, contract
         # Те же сведения под именами, которые СБИС пишет в свои УПД по заказам EDI
         ("ЗаказНомер", order_no),
         ("ЗаказДата", order_date),
+        ("Срок", odoc.get("Срок") or ""),
+        ("СрокВремя", odoc.get("СрокВремя") or ""),
         ("НакладнаяНомер", number),
         ("НакладнаяДата", stamp),
         ("ОтгрузкаДата", stamp),
