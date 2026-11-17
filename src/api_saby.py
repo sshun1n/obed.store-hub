@@ -84,7 +84,7 @@ def saby_day(day: date, db: Session = Depends(get_db), user=Depends(auth.get_cur
     for d in docs:
         if d.kind in by_kind and d.order_no and d.ours:
             by_kind[d.kind][d.order_no] = d
-    registry = db.query(database.UpdRow).filter(database.UpdRow.day == day).order_by(database.UpdRow.number).all()
+    registry = upd_registry.rows_for(db, day, upd_registry.LAVKA_INN)
     free = list(registry)
 
     weights, unknown_weight = saby_actions.cargo_weights(db, orders, settings.bag_weight_kg)
@@ -117,14 +117,18 @@ def saby_day(day: date, db: Session = Depends(get_db), user=Depends(auth.get_cur
             "registry": reg,
         })
 
-    # Реестр 1С общий: строки точек Самоката этого дня — не «лишние», их показывает страница Самоката
+    # Старый реестр без контрагента: строки точек Самоката этого дня — не «лишние», их показывает
+    # страница Самоката. В новом строки Самоката сюда не попадают вовсе
+    free_old = [r for r in free if r.buyer_inn is None]
+    free = [r for r in free if r.buyer_inn is not None]
     samokat = (db.query(database.SamokatOrder).options(joinedload(database.SamokatOrder.point))
                .filter(database.SamokatOrder.delivery_date == day).all())
     if samokat:
         numbers = {o.shipment_number for o in samokat if o.shipment_number}
         addresses = [o.point.address for o in samokat if o.point and o.point.address]
-        free = [r for r in free if r.number not in numbers
-                and not any(upd_registry.same_address(a, r.address or "") for a in addresses)]
+        free_old = [r for r in free_old if r.number not in numbers
+                    and not any(upd_registry.same_address(a, r.address or "") for a in addresses)]
+    free += free_old
 
     transport = [{**_doc(d), "party": d.party, "cargo": d.cargo,
                   "waybills": sum(1 for w in docs if w.kind == "waybill" and w.parent_id == d.saby_id)}
@@ -191,16 +195,34 @@ async def saby_registry(file: UploadFile = File(...), db: Session = Depends(get_
     except upd_registry.RegistryError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     days = sorted({r.day for r in rows})
+    # Общий реестр с колонкой «Контрагент»: строка — покупателю с тем же «Наименованием в 1С»,
+    # строки остальных контрагентов не нужны. В старом реестре контрагента нет — как раньше
+    with_party = any(r.party for r in rows)
+    buyers = {upd_registry.party_key(e.name_1c): e.inn for e in db.query(database.LegalEntity)
+              .filter(database.LegalEntity.role == "buyer", database.LegalEntity.is_active.is_(True))
+              if e.name_1c}
+    if with_party and not buyers:
+        raise HTTPException(status_code=400, detail="В реестре есть «Контрагент», а у покупателей в «Юрлицах» "
+                                                    "не заполнено «Наименование в 1С» — не понять, чьи строки")
     # Реестр общий для Лавки и Самоката, а 1С выгружает его кусками: файл заменяет только
     # свои строки (день + номер). Раньше он стирал день целиком, и файл Самоката за 12.11
-    # удалил строки Лавки за тот же день
+    # удалил строки Лавки за тот же день. Строки чужих контрагентов тоже убираем:
+    # старый реестр мог их загрузить, а по адресу они путаются с нашими точками
+    kept, skipped = 0, {}
     for r in rows:
         db.query(database.UpdRow).filter(database.UpdRow.day == r.day,
                                          database.UpdRow.number == r.number).delete(synchronize_session=False)
-        db.add(database.UpdRow(day=r.day, number=r.number, amount=r.amount, address=r.address[:300] or None))
+        inn = buyers.get(upd_registry.party_key(r.party)) if with_party else None
+        if with_party and inn is None:
+            skipped[r.party or "без контрагента"] = skipped.get(r.party or "без контрагента", 0) + 1
+            continue
+        db.add(database.UpdRow(day=r.day, number=r.number, amount=r.amount, address=r.address[:300] or None,
+                               buyer_inn=inn))
+        kept += 1
     db.commit()
-    return {"rows": len(rows), "days": [d.isoformat() for d in days],
-            "label": format_range(days[0], days[-1])}
+    return {"rows": kept, "days": [d.isoformat() for d in days],
+            "label": format_range(days[0], days[-1]),
+            "skipped": [{"party": k, "rows": v} for k, v in sorted(skipped.items())]}
 
 
 # --- Настройки ---

@@ -430,6 +430,9 @@ class UpdRow(Base):
     number = Column(String(30), nullable=False)
     amount = Column(Numeric(12, 2), nullable=False)
     address = Column(String(300), nullable=True)
+    # ИНН покупателя, к которому строка относится по колонке «Контрагент» и
+    # «Наименованию в 1С» из «Юрлиц». Пусто — старый реестр без контрагента: сверка по адресу
+    buyer_inn = Column(String(12), nullable=True, index=True)
     uploaded_at = Column(DateTime, default=datetime.utcnow)
 
 # --- ЮРЛИЦА И ПЕРЕВОЗЧИКИ (Яндекс.Лавка и СБИС) ---
@@ -456,6 +459,8 @@ class LegalEntity(Base):
     email = Column(String(150), nullable=True)
     # Идентификатор ящика ЭДО. У Лавки ЭТрН уходят в Контур, без него СБИС выберет свой ящик
     edo_id = Column(String(100), nullable=True)
+    # Как покупатель называется в колонке «Контрагент» реестра 1С («ЯНДЕКС.ЛАВКА ООО»)
+    name_1c = Column(String(200), nullable=True)
     is_default = Column(Boolean, default=False, nullable=False)  # подставляется в документы по умолчанию
     is_active = Column(Boolean, default=True, nullable=False)
     notes = Column(Text, nullable=True)
@@ -686,6 +691,9 @@ YANDEX_LAVKA = dict(
           "так и в ka-webapp, где документы проходят. Ящик — в Контуре.",
 )
 
+# Названия покупателей в колонке «Контрагент» реестра 1С (выгрузка владельца за 18.11.2026)
+NAMES_1C = {"9718101499": "ЯНДЕКС.ЛАВКА ООО", "7811657720": "Умный Ритейл ООО"}
+
 def _seed_buyer():
     # Покупатель нужен сразу: без него не собрать ни один документ
     db = SessionLocal()
@@ -693,6 +701,11 @@ def _seed_buyer():
         if not db.query(LegalEntity).filter(LegalEntity.role == "buyer").first():
             db.add(LegalEntity(**YANDEX_LAVKA))
             db.commit()
+        # «Наименование в 1С» — один раз, если пусто; дальше правится в «Юрлицах»
+        for entity in db.query(LegalEntity).filter(LegalEntity.role == "buyer", LegalEntity.name_1c.is_(None)):
+            if entity.inn in NAMES_1C:
+                entity.name_1c = NAMES_1C[entity.inn]
+        db.commit()
     finally:
         db.close()
 

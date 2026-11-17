@@ -43,6 +43,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (line) parts.push(`<div class="cell-sub">${line}</div>`);
         else parts.push('<div class="cell-sub ts-warn">нет телефона</div>');
         if (e.edo_id) parts.push(`<div class="cell-sub mono-cell">ЭДО ${esc(e.edo_id)}</div>`);
+        if (e.name_1c) parts.push(`<div class="cell-sub">В 1С: ${esc(e.name_1c)}</div>`);
         return parts.join('');
     }
 
@@ -94,6 +95,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (entity.name === `ИП ${fio}` || entity.name === entity.full_name) shownName = null;
         }
         fillForm(form, entity ? { ...entity, name: shownName } : {});
+        el('eName1cBox').hidden = editing.role !== 'buyer';
         applyKind(form, kindSeg, entity ? entity.kind : (role === 'own' ? 'ИП' : 'ЮЛ'));
         updateOgrnLabel();
         errorEl.textContent = '';

@@ -97,6 +97,11 @@
                     <input id="eEdo" name="edo_id" class="styled-text-input mono-input" placeholder="2BM-…">
                     <span class="field-hint">Нужен покупателю, если документы принимает не СБИС: у Лавки ЭТрН идут в Контур.</span>
                 </div>
+                <div class="form-group" id="eName1cBox">
+                    <label class="control-label" for="eName1c">Наименование в 1С</label>
+                    <input id="eName1c" name="name_1c" class="styled-text-input" placeholder="ЯНДЕКС.ЛАВКА ООО">
+                    <span class="field-hint">Как в колонке «Контрагент» реестра 1С: по нему строки реестра делятся между Лавкой и Самокатом.</span>
+                </div>
                 <div class="form-group"><label class="control-label" for="eNotes">Заметки</label><textarea id="eNotes" name="notes" class="styled-text-input" rows="2"></textarea></div>
 
                 <span class="error-msg" id="entityError"></span>
@@ -110,7 +115,7 @@
 
     <script src="/static/hub-ui.js?v=1.10.0"></script>
     <script src="/static/parties.js?v=1.12.0"></script>
-    <script src="/static/entities.js?v=1.12.1"></script>
+    <script src="/static/entities.js?v=1.13.0"></script>
     <div id="hubEnd" hidden></div>
 </body>
 </html>

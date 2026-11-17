@@ -95,6 +95,7 @@ class EntityIn(BaseModel):
     phone: Optional[str] = Field(default=None, max_length=50)
     email: Optional[str] = Field(default=None, max_length=150)
     edo_id: Optional[str] = Field(default=None, max_length=100)
+    name_1c: Optional[str] = Field(default=None, max_length=200)
     notes: Optional[str] = Field(default=None, max_length=2000)
 
 
@@ -123,7 +124,7 @@ def _apply_entity(entity: LegalEntity, data: EntityIn) -> None:
     entity.first_name = _clean(data.first_name) if is_person else None
     entity.middle_name = _clean(data.middle_name) if is_person else None
     entity.full_name = None if is_person else _clean(data.full_name)
-    for field in ("address", "phone", "email", "edo_id", "notes"):
+    for field in ("address", "phone", "email", "edo_id", "name_1c", "notes"):
         setattr(entity, field, _clean(getattr(data, field)))
     name = _clean(data.name)
     if not name:

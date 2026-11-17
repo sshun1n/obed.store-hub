@@ -504,7 +504,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const r = await fetch('/api/v1/saby/registry', { method: 'POST', body: form });
             const body = await r.json().catch(() => ({}));
             if (!r.ok) throw new Error(body.detail || 'Реестр не загрузился');
-            toast(`Реестр загружен: ${body.rows} строк за ${body.label}`);
+            const other = (body.skipped || []).reduce((n, s) => n + s.rows, 0);
+            toast(`Реестр загружен: ${body.rows} строк за ${body.label}${other ? ` · других контрагентов пропущено: ${other}` : ''}`);
             await load();
         } catch (err) { toast(err.message, 'error'); }
     });

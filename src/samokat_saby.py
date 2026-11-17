@@ -220,7 +220,7 @@ def _linked(db, day: date) -> Dict[str, database.SamokatOrder]:
 
 
 def _registry_row(db, day: date, address: str, used: set) -> Optional[database.UpdRow]:
-    for row in db.query(database.UpdRow).filter(database.UpdRow.day == day).order_by(database.UpdRow.number):
+    for row in upd_registry.rows_for(db, day, SAMOKAT_INN):
         if row.id not in used and upd_registry.same_address(address, row.address or ""):
             return row
     return None

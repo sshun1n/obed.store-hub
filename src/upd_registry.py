@@ -3,6 +3,11 @@
 Реестр «Реализация (акт, накладная, УПД)» — источник номеров УПД: номер живёт
 только в 1С, интеграции с её облаком нет. У Обеда реестр свой: 1С отбирает
 строки по ответственному (образец за 02–08.11.2026, 66 строк).
+
+С 19.11.2026 реестр выгружается общим, с колонкой «Контрагент»: точки Самоката и
+Лавки бывают по одному адресу, и сверка только по адресу путала их. Строка
+относится к покупателю, у которого «Наименование в 1С» совпало с «Контрагентом»;
+строки других контрагентов не загружаются.
 """
 from __future__ import annotations
 
@@ -25,6 +30,7 @@ class RegistryRow:
     number: str
     amount: Decimal
     address: str
+    party: str = ""      # колонка «Контрагент»; пусто в старом реестре
 
 
 def _cell(sheet, row: int, col: int) -> str:
@@ -78,10 +84,28 @@ def parse_registry(content: bytes) -> List[RegistryRow]:
             continue
         if number.endswith(".0"):   # номер приходит числом: «5213.0»
             number = number[:-2]
-        rows.append(RegistryRow(day, number, amount, _cell(sheet, row, columns.get("комментарий", -1))))
+        rows.append(RegistryRow(day, number, amount, _cell(sheet, row, columns.get("комментарий", -1)),
+                                _cell(sheet, row, columns["контрагент"]) if "контрагент" in columns else ""))
     if not rows:
         raise RegistryError("В реестре нет ни одной строки с датой, номером и суммой")
     return rows
+
+
+def party_key(name: str) -> str:
+    """«Умный Ритейл ООО» и «умный  ритейл ООО» — один контрагент."""
+    return " ".join((name or "").lower().replace("ё", "е").replace('"', " ").replace("«", " ").replace("»", " ").split())
+
+
+def rows_for(db, day: date, inn: str):
+    """Строки реестра дня для покупателя: его и старые, без контрагента (их сверяем по адресу)."""
+    from src import database
+    return (db.query(database.UpdRow)
+            .filter(database.UpdRow.day == day,
+                    (database.UpdRow.buyer_inn.is_(None)) | (database.UpdRow.buyer_inn == inn))
+            .order_by(database.UpdRow.number).all())
+
+
+LAVKA_INN = "9718101499"
 
 
 # Сверка адресов: дом с корпусом и значимые слова. Пишут по-разному —

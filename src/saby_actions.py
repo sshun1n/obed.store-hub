@@ -154,7 +154,7 @@ def _orders(db, day: date, numbers: List[str]) -> List[database.LavkaOrder]:
 
 def _registry_row(db, day: date, order: database.LavkaOrder, used: set) -> Optional[database.UpdRow]:
     """Строка реестра 1С для точки: по адресу, как в ka-webapp. Сумма — только проверка."""
-    for row in db.query(database.UpdRow).filter(database.UpdRow.day == day).order_by(database.UpdRow.number):
+    for row in upd_registry.rows_for(db, day, upd_registry.LAVKA_INN):
         if row.id not in used and upd_registry.same_address(order.point.address or "", row.address or ""):
             return row
     return None

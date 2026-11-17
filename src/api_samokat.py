@@ -189,7 +189,7 @@ def samokat_day(day: date, db: Session = Depends(get_db), user=Depends(auth.get_
     rows = (db.query(Order).options(joinedload(Order.point))
             .filter(Order.delivery_date == day).all())
     rows.sort(key=lambda o: short_address(o.point.address if o.point else "").lower())
-    registry = db.query(database.UpdRow).filter(database.UpdRow.day == day).order_by(database.UpdRow.number).all()
+    registry = upd_registry.rows_for(db, day, samokat_saby.SAMOKAT_INN)
     docs = db.query(database.SabyDoc).filter(database.SabyDoc.delivery_date == day).all()
     mine = [d for d in docs if d.kind.startswith("sm_")]
     by_kind: Dict[str, Dict[str, database.SabyDoc]] = {"sm_order": {}, "sm_shipment": {}, "waybill": {},
