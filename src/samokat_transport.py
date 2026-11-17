@@ -304,3 +304,32 @@ def refresh(sid: str, db, day: date, store) -> None:
         for doc in mine.values():
             if doc.kind == kind and doc.saby_id not in seen:
                 doc.state = "Удалён"
+    _adopt_waybills(sid, store)
+
+
+ORDER_RE = re.compile(r'ДрОГруз="([^"]*)"')
+
+
+def _adopt_waybills(sid: str, store) -> None:
+    """ЭТрН к нашему заказу на перевозку, сделанные в кабинете, — тоже наши: иначе страница
+    их не видит, а «Создать» сделает по тому же заказу вторую. Номер заказа Самоката лежит
+    в ДрОГруз (у Лавки — в ТекстИнф ORDERS, поэтому общее чтение ЭТрН его не находит).
+    Заказов на перевозку в день один-два — карточки читаем каждый раз."""
+    transports = [d for d in store.rows.values() if d.kind == TRANSPORT_KIND and d.state != "Удалён"]
+    known = {d.saby_id for d in store.rows.values() if d.kind == WAYBILL_KIND}
+    for transport in transports:
+        card = sc.read_card(sid, sc.TMS_URL, transport.saby_id, sc.TRANSPORT_TYPE)
+        for child in sc.consequences(card, sc.WAYBILL_TYPE):
+            if child["id"] in known:
+                continue
+            wcard = sc.read_card(sid, sc.TMS_URL, child["id"], sc.WAYBILL_TYPE)
+            if wcard.get("Удален") == "Да":
+                continue
+            xml = sc.attachment_xml(sid, wcard, "ЭТрН")
+            found = ORDER_RE.search(xml)
+            facts = sc.waybill_facts(xml)
+            order_no = (found.group(1) if found else "") or facts["order_no"]
+            store.put(child["id"], WAYBILL_KIND, wcard, order_no=order_no.strip() or None,
+                      cargo=facts["cargo"][:150] or None, address=facts["address"][:400] or None,
+                      parent_id=transport.saby_id, ours=True, read_at=datetime.utcnow())
+            known.add(child["id"])
