@@ -172,7 +172,11 @@ def build(order_xml: str, template_xml: str, *, number: str, day: date, contract
         # Поля Самоката (требования, «Обязательные информационные поля по заголовку»)
         ("отправитель", our_gln),
         ("грузополучатель", point_gln),
+        # Проверка Saby для сети Самокат (протокол ФЛК по № 7387 от 17.11) требует ещё
+        # дату заказа и GLN покупателя — в требованиях Самоката их нет, но без них не отправить
+        ("покупатель", buyer.get("GLN") or ""),
         ("номер_заказа", order_no),
+        ("дата_заказа", order_date),
         ("номер_накладной", number),
         ("номер_договора", contract.number),
         ("дата_договора", contract.date),
@@ -222,7 +226,9 @@ def build(order_xml: str, template_xml: str, *, number: str, day: date, contract
         tax = ET.SubElement(line, "СумНал")
         ET.SubElement(tax, "СумНал").text = _money(vat)
         name = row.get("Название") or ""
-        for key, value in (("штрихкод", gtin), ("код_покупателя", buyer_code),
+        # «КодПокупателя» — под именем, которое ищет проверка Saby (протокол ФЛК: «не указан
+        # КодПокупателя»); «код_покупателя» — под именем из требований Самоката
+        for key, value in (("штрихкод", gtin), ("код_покупателя", buyer_code), ("КодПокупателя", buyer_code),
                            # Дальше — как в УПД, которые СБИС делает сам по заказам EDI
                            ("НазваниеПокупателя", name), ("GTIN", gtin), ("ЗаказНомер", order_no),
                            ("Ид", item_code), ("ШК", item_code), ("Код", item_code), ("КодПоставщика", item_code),

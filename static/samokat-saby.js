@@ -42,6 +42,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const STATES = [
         [/завершено успешно/i, 'Завершён', 'ok'],
         [/с проблемами/i, 'С проблемами', 'bad'],
+        [/проблемы при доставке/i, 'Не отправлен: ошибки', 'bad'],
         [/не определено/i, 'Расхождения', 'bad'],
         [/редактируется|черновик/i, 'Черновик', 'draft'],
         [/удал/i, 'Удалён', 'bad'],
@@ -83,7 +84,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const ship = p.shipment, reg = regMark(p);
         if (!ship) return `<span class="saby-none">нет</span>${reg ? `<div class="saby-sub">${reg}</div>` : ''}`;
         // Вложение УПД есть и у черновика — «ушёл» только после отправки
-        const upd = ship.upd && !/редактируется|черновик/i.test(ship.state || 'Черновик') ? ' <span class="st st-ok">УПД ушёл</span>' : '';
+        // «УПД ушёл» — только когда документ действительно отправлен, а не застрял на проверке
+        const upd = ship.upd && !/редактируется|черновик|проблем|ошибк|отклон|удал/i.test(ship.state || 'Черновик') ? ' <span class="st st-ok">УПД ушёл</span>' : '';
         return `${link(ship.link, `№ ${esc(ship.number || '—')}`)} ${chip(ship.state || 'Черновик')}${upd}${reg ? `<div class="saby-sub">${reg}</div>` : ''}`;
     }
     function waybillCell(p) {
@@ -148,7 +150,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ].join('');
         }
         const step3 = stepCard(3, 'Реализации и УПД',
-            `Создано ${s.shipments} из ${n}, отправлено ${s.sent}${shipDrafts.size ? `, не подписано ${shipDrafts.size}` : ''}${sel}`,
+            `Создано ${s.shipments} из ${n}, отправлено ${s.sent}${shipDrafts.size ? `, не подписано ${shipDrafts.size}` : ''}${s.failed ? `, <span class="saby-reg-bad">не ушло из-за ошибок ${s.failed}</span>` : ''}${sel}`,
             body3, n > 0 && s.sent === n);
 
         // 4. Заказ на перевозку: свой на день Самоката, все точки одним рейсом — как у Лавки

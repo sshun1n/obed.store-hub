@@ -170,6 +170,18 @@ def _draft(state: Optional[str]) -> bool:
     return not state or state in ("Черновик", "Документ редактируется")
 
 
+FAILED = ("проблем", "ошибк", "отклон", "аннулир", "удал")
+
+
+def _failed(state: Optional[str]) -> bool:
+    """Не ушла: проверка СБИС остановила отправку («Проблемы при доставке»), отклонена, удалена."""
+    return any(word in (state or "").lower() for word in FAILED)
+
+
+def _sent(state: Optional[str]) -> bool:
+    return not _draft(state) and not _failed(state)
+
+
 @router.get("/day")
 def samokat_day(day: date, db: Session = Depends(get_db), user=Depends(auth.get_current_user)):
     """Точки дня из базы, без похода в СБИС: заказ УР-, ответ на него, строка реестра 1С по адресу,
@@ -238,7 +250,8 @@ def samokat_day(day: date, db: Session = Depends(get_db), user=Depends(auth.get_
                   "approved": sum(1 for p in points if p["order"] and p["order"]["approved"]),
                   "shipments": sum(1 for p in points if p["shipment"]),
                   "drafts": sum(1 for p in points if p["shipment"] and _draft(p["shipment"]["state"])),
-                  "sent": sum(1 for p in points if p["shipment"] and not _draft(p["shipment"]["state"])),
+                  "sent": sum(1 for p in points if p["shipment"] and _sent(p["shipment"]["state"])),
+                  "failed": sum(1 for p in points if p["shipment"] and _failed(p["shipment"]["state"])),
                   "waybills": sum(1 for p in points if p["waybill"]),
                   "our_waybills": sum(1 for p in points if p["waybill_ours"])},
         "points": points,
