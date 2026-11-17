@@ -40,6 +40,7 @@ from src import database, saby_actions as sa, saby_client as sc, samokat_saby as
 ORDER_RE = re.compile(r"^УР-\d{8}$")
 TRANSPORT_KIND, WAYBILL_KIND = "sm_transport", "sm_waybill"
 RECEIVER_NAME = 'ООО "УМНЫЙ РИТЕЙЛ"'   # как в примере требований, п. 1.2
+NO_PHONE = "0"                          # телефон ГП не нужен — так разрешил Самокат
 
 
 class TransportError(sc.SabyError):
@@ -49,15 +50,16 @@ class TransportError(sc.SabyError):
 # --- Стороны и точки ---
 
 def receiver(db) -> database.LegalEntity:
-    """Грузополучатель — головное «Умного ритейла» из «Юрлиц». Без телефона не делаем:
-    СБИС тогда пишет пустой <Контакт/>, а в требованиях телефон есть."""
+    """Грузополучатель — головное «Умного ритейла» из «Юрлиц». Телефон необязателен:
+    менеджер ЭДО Самоката (Кондрашина Н., 17.11.2026): «на месте телефона можно указать
+    прочерк или ноль» — пустой в карточке пишем как «0»."""
     entity = (db.query(database.LegalEntity)
               .filter(database.LegalEntity.inn == ss.SAMOKAT_INN, database.LegalEntity.is_active.is_(True))
               .order_by(database.LegalEntity.id).first())
     if entity is None:
         raise TransportError("В «Юрлицах» нет ООО «Умный ритейл» (ИНН 7811657720) — добавьте покупателем")
     problems = [what for what, ok in (("КПП 997750001", entity.kpp == ss.SAMOKAT_KPP), ("адреса", bool(entity.address)),
-                                      ("телефона", bool(entity.phone))) if not ok]
+                                      ) if not ok]
     if problems:
         raise TransportError(f"У «Умного ритейла» в «Юрлицах» нет {', '.join(problems)} — заполните карточку")
     return entity
@@ -159,7 +161,7 @@ def waybill_payload(s, own, buyer: database.LegalEntity, carrier, order: databas
                     transport: database.SabyDoc, day: date, weight_kg: Decimal) -> dict:
     """Титул грузоотправителя: общий сборщик Лавки и замены по требованиям Самоката."""
     party = SimpleNamespace(inn=buyer.inn, kpp=buyer.kpp, full_name=RECEIVER_NAME, name=RECEIVER_NAME,
-                            address=buyer.address, phone=buyer.phone)
+                            address=buyer.address, phone=(buyer.phone or "").strip() or NO_PHONE)
     payload = sa.waybill_payload(s, own, party, carrier, _stop(order), number, transport, day, weight_kg)
     info = payload[sa.WAYBILL_KND]["Файл"]["Документ"]["СодИнфГО"]
     # 1.1: номер заказа только одним способом — ДрОГруз в строке груза
