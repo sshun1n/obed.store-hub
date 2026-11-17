@@ -307,7 +307,7 @@ def refresh(sid: str, db, day: date, store) -> None:
     _adopt_waybills(sid, store)
 
 
-ORDER_RE = re.compile(r'ДрОГруз="([^"]*)"')
+DROGRUZ_RE = re.compile(r'ДрОГруз="([^"]*)"')
 
 
 def _adopt_waybills(sid: str, store) -> None:
@@ -326,7 +326,7 @@ def _adopt_waybills(sid: str, store) -> None:
             if wcard.get("Удален") == "Да":
                 continue
             xml = sc.attachment_xml(sid, wcard, "ЭТрН")
-            found = ORDER_RE.search(xml)
+            found = DROGRUZ_RE.search(xml)
             facts = sc.waybill_facts(xml)
             order_no = (found.group(1) if found else "") or facts["order_no"]
             store.put(child["id"], WAYBILL_KIND, wcard, order_no=order_no.strip() or None,
