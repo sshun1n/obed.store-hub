@@ -216,7 +216,8 @@ def create_waybills(day: date, numbers: List[str], user: str, dry_run: bool = Fa
         own, _ = sa._parties(db)
         buyer = receiver(db)
         have = {d.order_no for d in db.query(database.SabyDoc).filter(
-            database.SabyDoc.delivery_date == day, database.SabyDoc.kind == WAYBILL_KIND,
+            # и наши, и сделанные в кабинете (их видит общее чтение ЭТрН дня по номеру заказа)
+            database.SabyDoc.delivery_date == day, database.SabyDoc.kind.in_((WAYBILL_KIND, "waybill")),
             database.SabyDoc.state != "Удалён") if d.order_no}
         orders = []
         for o in _orders(db, day, numbers):
