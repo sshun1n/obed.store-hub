@@ -650,7 +650,9 @@ KINDS = {"transport": (sc.TRANSPORT_TYPE, ORDER_ACTIONS, sc.TMS_URL, None),
          "sm_waybill": (sc.WAYBILL_TYPE, WAYBILL_ACTIONS, sc.TMS_URL, None),
          # Реализация Самоката с УПД: черновик уходит тем же шагом «Отправка», но с подписью —
          # УПД у Самоката идёт вместе с реализацией. Карточку не открываем (шаг известен заранее)
-         "sm_upd": (sc.SHIPMENT_TYPE, (), sc.DOCS_URL, UPD_STEP)}
+         "sm_upd": (sc.SHIPMENT_TYPE, (), sc.DOCS_URL, UPD_STEP),
+         # Заказ Самоката: «Утверждение» → «Утвердить», если СБИС требует подписи ответа на заказ
+         "sm_order": (sc.ORDER_TYPE, ("Утвердить",), sc.DOCS_URL, None)}
 
 
 def samokat_drafts(db, day: date) -> List[database.SabyDoc]:
@@ -676,6 +678,11 @@ def upd_ready(doc: database.SabyDoc) -> bool:
 def sign_targets(db, day: date, kind: str, numbers: List[str]) -> List[database.SabyDoc]:
     """Что подписывать: наши черновики нужного вида за день (по выбранным точкам для ЭТрН),
     для УПД — наши реализации с актом приёмки и без отправленного УПД."""
+    if kind == "sm_order":
+        docs = [d for d in db.query(database.SabyDoc).filter(
+            database.SabyDoc.delivery_date == day, database.SabyDoc.kind == "sm_order",
+            database.SabyDoc.state != "Удалён") if "ПодтверждениеЗаказа" not in (d.attachments or "")]
+        return [d for d in docs if d.order_no in set(numbers)] if numbers else docs
     if kind == "sm_upd":
         docs = samokat_drafts(db, day)
         return [d for d in docs if d.order_no in set(numbers)] if numbers else docs

@@ -315,7 +315,7 @@ class ActionIn(BaseModel):
 @router.post("/action")
 def samokat_action(data: ActionIn, db: Session = Depends(get_db), admin=Depends(auth.admin_only)):
     """Заказ на перевозку и ЭТрН Самоката — фоном, черновиками. Только админ, только по кнопке."""
-    if data.action not in ("transport", "waybills", "waybills_check"):
+    if data.action not in ("transport", "waybills", "waybills_check", "approve"):
         raise HTTPException(status_code=400, detail="Неизвестное действие")
     if not saby_client.configured():
         raise HTTPException(status_code=400, detail="Не заданы SABY_LOGIN и SABY_PASSWORD в .env сервера")

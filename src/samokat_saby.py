@@ -398,12 +398,69 @@ def create_drafts(day: date, user: str, dry_run: bool, only: Optional[List[str]]
         db.close()
 
 
+# --- Ответ на заказ: «Утверждение» → «Утвердить» ---
+
+APPROVED = "ПодтверждениеЗаказа"     # вложение ответа на заказ (ORDRSP) — его СБИС кладёт при утверждении
+
+
+def approve_orders(day: date, only: Optional[List[str]] = None) -> Dict:
+    """Утвердить заказы Самоката дня — как кнопкой «Утвердить» в кабинете: СБИС отправит
+    ответ на заказ «подтверждён без изменений». Утверждённые не трогаем. Если переход
+    требует подписи — не делаем его сами, а отдаём странице: она откроет окно подписи."""
+    result = {"done": [], "errors": {}, "skipped": [], "notes": [], "need_sign": []}
+    _step("Вход в СБИС")
+    sid = sc.login()
+    _step("Список заказов Самоката")
+    items = _day_items(sid, day)
+    if only:
+        items = [i for i in items if _number(i) in set(only)]
+    todo = []
+    for item in items:
+        number = _number(item)
+        if APPROVED in sc.attachments(item):
+            result["skipped"].append(number)
+            _row(number, "skip", "уже утверждён")
+        else:
+            todo.append(item)
+    cards = sc.pmap(lambda it: sc.read_card(sid, sc.DOCS_URL, it["Идентификатор"], sc.ORDER_TYPE), todo,
+                    lambda i, n: _step(f"Читаю заказы: {i} из {n}", i, n))
+    for i, (item, card) in enumerate(zip(todo, cards), start=1):
+        number = _number(item)
+        _step(f"Утверждаю заказ {i} из {len(todo)}", i, len(todo))
+        try:
+            if isinstance(card, Exception):
+                raise card
+            stage = next((st for st in card.get("Этап") or [] if st.get("Название") == "Утверждение"
+                          and st.get("Служебный") != "Да"), None)
+            action = next((a for a in (stage or {}).get("Действие") or [] if a.get("Название") == "Утвердить"), None)
+            if action is None:
+                result["skipped"].append(number)
+                _row(number, "skip", "утверждать нечего")
+                continue
+            if action.get("ТребуетПодписания") == "Да":
+                result["need_sign"].append(number)
+                _row(number, "wait", "нужна подпись")
+                continue
+            _row(number, "work", "утверждаю")
+            sc.run_action(sid, sc.DOCS_URL, item["Идентификатор"], "Утверждение", "Утвердить", stage.get("Идентификатор", ""))
+            result["done"].append(number)
+            _row(number, "ok", "утверждён")
+        except sc.SabyError as exc:
+            result["errors"][number] = str(exc)
+            _row(number, "error", str(exc))
+    if result["need_sign"]:
+        result["notes"].append(f"Утверждение требует подписи: {len(result['need_sign'])} — откроется окно подписи")
+    return result
+
+
 # --- Фоновая операция ---
 
 LABELS = {"refresh": "Чтение СБИС · Самокат", "check": "Проверка УПД · Самокат",
           "create": "Черновики реализаций · Самокат", "transport": "Заказ на перевозку · Самокат",
-          "waybills": "Создание ЭТрН · Самокат", "waybills_check": "Проверка ЭТрН · Самокат"}
-ROW_KINDS = {"check": "shipment", "create": "shipment", "waybills": "waybill", "waybills_check": "waybill"}
+          "waybills": "Создание ЭТрН · Самокат", "waybills_check": "Проверка ЭТрН · Самокат",
+          "approve": "Утверждение заказов · Самокат"}
+ROW_KINDS = {"check": "shipment", "create": "shipment", "waybills": "waybill", "waybills_check": "waybill",
+             "approve": "order"}
 
 
 def _run(day: date, user: str, mode: str, only: Optional[List[str]], carrier_id: Optional[int]) -> Dict:
@@ -412,6 +469,8 @@ def _run(day: date, user: str, mode: str, only: Optional[List[str]], carrier_id:
         return create_drafts(day, user, mode == "check", only)
     if mode == "transport":
         return st.create_transport(day, only or [], carrier_id, user)
+    if mode == "approve":
+        return approve_orders(day, only)
     return st.create_waybills(day, only or [], user, dry_run=mode == "waybills_check")
 
 

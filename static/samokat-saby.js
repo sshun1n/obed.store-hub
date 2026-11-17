@@ -119,9 +119,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const n = d.points.length;
 
         // 1. Ответ на заказ: Самокат ждёт его до отгрузки (у Лавки такого шага нет)
+        // СБИС отправит ответ на заказ «подтверждён без изменений», как кнопка «Утвердить» в кабинете
+        const toApprove = t.filter(p => p.order && !p.order.approved);
         const step1 = stepCard(1, 'Ответ на заказ',
-            `Утверждено ${s.approved} из ${n}${s.orders < n ? ` · в кабинете найдено ${s.orders}` : ''}`,
-            s.approved < n ? soon('Пока — кнопкой «Утвердить» в кабинете') : '',
+            `Утверждено ${s.approved} из ${n}${s.orders < n ? ` · в кабинете найдено ${s.orders}` : ''}${sel}`,
+            admin && toApprove.length ? btn('approve', 'Утвердить', { primary: true, title: 'Ответ на заказ «подтверждён без изменений» — Самокату' }) : '',
             n > 0 && s.approved === n);
 
         // 2. Реестр 1С
@@ -406,6 +408,26 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (name === 'waybill-sign') { await sign('sm_waybill'); return; }
             if (name === 'ship-sign') { await sign('sm_upd'); return; }
+            if (name === 'approve') {
+                const count = targets().filter(p => p.order && !p.order.approved).length;
+                const ok = await Hub.confirmDialog({
+                    title: 'Утвердить заказы?',
+                    text: `Самокату уйдёт ответ на заказ «подтверждён без изменений», заказов: ${count}. Утверждённые не трогаю.`,
+                    okText: 'Утвердить', danger: false,
+                });
+                if (!ok) return;
+                await run('/api/v1/samokat/action', { day: day(), action: 'approve', orders });
+                // Если СБИС требует подписи ответа — то же окно подписи, что у реализаций
+                const need = (lastResult && lastResult.need_sign) || [];
+                if (need.length) {
+                    const picked = selecting ? need : [];
+                    await SabySign.sign({ day: day(), kind: 'sm_order', orders: picked, title: 'Ответ на заказ',
+                        what: `Подпись утвердит заказы и отправит Самокату ответ: ${need.length}.` }).then(async (signed) => {
+                        if (signed) { setBusy(true, 'Перечитываю день'); waiting = true; finished = await SabyTask.wait('samokat'); waiting = false; setBusy(false); await load(); }
+                    });
+                }
+                return;
+            }
             if (name === 'ship-all') {
                 const create = targets().filter(p => !p.shipment && p.registry && p.order_no);
                 if (create.length) {
