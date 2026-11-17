@@ -31,6 +31,7 @@ class RegistryRow:
     amount: Decimal
     address: str
     party: str = ""      # колонка «Контрагент»; пусто в старом реестре
+    responsible: str = ""  # колонка «Ответственный»: им наши накладные отличаются от кондитерки
 
 
 def _cell(sheet, row: int, col: int) -> str:
@@ -85,7 +86,8 @@ def parse_registry(content: bytes) -> List[RegistryRow]:
         if number.endswith(".0"):   # номер приходит числом: «5213.0»
             number = number[:-2]
         rows.append(RegistryRow(day, number, amount, _cell(sheet, row, columns.get("комментарий", -1)),
-                                _cell(sheet, row, columns["контрагент"]) if "контрагент" in columns else ""))
+                                _cell(sheet, row, columns["контрагент"]) if "контрагент" in columns else "",
+                                _cell(sheet, row, columns["ответственный"]) if "ответственный" in columns else ""))
     if not rows:
         raise RegistryError("В реестре нет ни одной строки с датой, номером и суммой")
     return rows

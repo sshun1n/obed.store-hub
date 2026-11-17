@@ -2354,3 +2354,16 @@ body:has(.saby-task.show) .toast-host { bottom: 112px; }
 /* Поля окна подписи прячутся атрибутом hidden: .form-group с display:flex его перебивал,
    и «Перевозчик» с пустым «Сертификатом» показывались там, где их быть не должно */
 .saby-sign [hidden] { display: none !important; }
+
+/* Админ-панель: реестр 1С */
+.reg-resp { display: flex; flex-direction: column; gap: 6px; }
+.reg-resp-item { display: flex; align-items: center; gap: 8px; font-size: 0.88rem; cursor: pointer; }
+.reg-resp-item input { width: 16px; height: 16px; accent-color: var(--red); cursor: pointer; }
+.reg-add { display: flex; gap: 8px; margin-top: 12px; }
+.reg-add .styled-text-input { flex: 1; min-width: 0; }
+.reg-subhead { margin-top: 22px; }
+.reg-buyer { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--line, #e6e2d8); font-size: 0.88rem; }
+.reg-skip { color: var(--muted); font-size: 0.82rem; }
+.reg-table { margin-top: 8px; }
+.reg-table td, .reg-table th { font-size: 0.82rem; }
+.reg-row-skip td { color: var(--muted); }

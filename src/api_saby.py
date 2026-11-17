@@ -5,6 +5,7 @@
 /sign/prepare и /sign/send (подпись в браузере), /check-transport.
 Читать могут все, менять — только админ.
 """
+import json
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Dict, List, Optional
@@ -198,9 +199,14 @@ async def saby_registry(file: UploadFile = File(...), db: Session = Depends(get_
     # Общий реестр с колонкой «Контрагент»: строка — покупателю с тем же «Наименованием в 1С»,
     # строки остальных контрагентов не нужны. В старом реестре контрагента нет — как раньше
     with_party = any(r.party for r in rows)
-    buyers = {upd_registry.party_key(e.name_1c): e.inn for e in db.query(database.LegalEntity)
-              .filter(database.LegalEntity.role == "buyer", database.LegalEntity.is_active.is_(True))
-              if e.name_1c}
+    entities = [e for e in db.query(database.LegalEntity)
+                .filter(database.LegalEntity.role == "buyer", database.LegalEntity.is_active.is_(True)) if e.name_1c]
+    buyers = {upd_registry.party_key(e.name_1c): e.inn for e in entities}
+    buyer_names = {e.inn: e.name for e in entities}
+    # «Ответственный»: наши накладные или кондитерки (её заказы Лавки — на те же точки)
+    settings = registry_settings(db)
+    ours = {upd_registry.party_key(n) for n in _lines(settings.responsibles)}
+    with_resp = bool(ours) and any(r.responsible for r in rows)
     if with_party and not buyers:
         raise HTTPException(status_code=400, detail="В реестре есть «Контрагент», а у покупателей в «Юрлицах» "
                                                     "не заполнено «Наименование в 1С» — не понять, чьи строки")
@@ -208,21 +214,87 @@ async def saby_registry(file: UploadFile = File(...), db: Session = Depends(get_
     # свои строки (день + номер). Раньше он стирал день целиком, и файл Самоката за 12.11
     # удалил строки Лавки за тот же день. Строки чужих контрагентов тоже убираем:
     # старый реестр мог их загрузить, а по адресу они путаются с нашими точками
-    kept, skipped = 0, {}
+    kept, skipped, groups = 0, {}, {}
     for r in rows:
         db.query(database.UpdRow).filter(database.UpdRow.day == r.day,
                                          database.UpdRow.number == r.number).delete(synchronize_session=False)
         inn = buyers.get(upd_registry.party_key(r.party)) if with_party else None
         if with_party and inn is None:
-            skipped[r.party or "без контрагента"] = skipped.get(r.party or "без контрагента", 0) + 1
+            verdict = "контрагент не наш"
+        elif with_resp and upd_registry.party_key(r.responsible) not in ours:
+            verdict = "не наш ответственный"
+        else:
+            verdict = ""
+        group = groups.setdefault((r.party, r.responsible), {
+            "party": r.party, "responsible": r.responsible, "rows": 0,
+            "to": buyer_names.get(inn, "по адресу") if not verdict else None, "skip": verdict or None})
+        group["rows"] += 1
+        if verdict:
+            label = r.party or "без контрагента"
+            skipped[label] = skipped.get(label, 0) + 1
             continue
         db.add(database.UpdRow(day=r.day, number=r.number, amount=r.amount, address=r.address[:300] or None,
                                buyer_inn=inn))
         kept += 1
+    settings.last_upload = json.dumps({
+        "at": datetime.utcnow().isoformat(timespec="minutes"), "label": format_range(days[0], days[-1]),
+        "kept": kept, "total": len(rows), "with_responsible": any(r.responsible for r in rows),
+        "groups": sorted(groups.values(), key=lambda g: (g["skip"] is not None, g["party"], g["responsible"]))},
+        ensure_ascii=False)
     db.commit()
     return {"rows": kept, "days": [d.isoformat() for d in days],
             "label": format_range(days[0], days[-1]),
             "skipped": [{"party": k, "rows": v} for k, v in sorted(skipped.items())]}
+
+
+# --- Настройка реестра (админ-панель) ---
+
+def _lines(text: Optional[str]) -> List[str]:
+    return [line.strip() for line in (text or "").splitlines() if line.strip()]
+
+
+def registry_settings(db) -> database.RegistrySettings:
+    row = db.get(database.RegistrySettings, 1)
+    if row is None:
+        row = database.RegistrySettings(id=1)
+        db.add(row)
+        db.flush()
+    return row
+
+
+def _registry_out(db) -> Dict:
+    row = registry_settings(db)
+    last = json.loads(row.last_upload) if row.last_upload else None
+    if last and last.get("at"):
+        last["at"] = _local(datetime.fromisoformat(last["at"]))
+    buyers = [{"name": e.name, "name_1c": e.name_1c} for e in db.query(database.LegalEntity)
+              .filter(database.LegalEntity.role == "buyer", database.LegalEntity.is_active.is_(True))
+              .order_by(database.LegalEntity.id)]
+    return {"responsibles": _lines(row.responsibles), "buyers": buyers, "last": last}
+
+
+class RegistryIn(BaseModel):
+    responsibles: List[str] = Field(default_factory=list, max_length=50)
+
+
+@router.get("/registry-settings")
+def registry_settings_get(db: Session = Depends(get_db), admin=Depends(auth.admin_only)):
+    out = _registry_out(db)
+    db.commit()
+    return out
+
+
+@router.put("/registry-settings")
+def registry_settings_put(data: RegistryIn, db: Session = Depends(get_db), admin=Depends(auth.admin_only)):
+    names, seen = [], set()
+    for name in data.responsibles:
+        name = " ".join(name.split())[:150]
+        if name and upd_registry.party_key(name) not in seen:
+            seen.add(upd_registry.party_key(name))
+            names.append(name)
+    registry_settings(db).responsibles = "\n".join(names) or None
+    db.commit()
+    return _registry_out(db)
 
 
 # --- Настройки ---

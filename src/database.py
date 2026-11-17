@@ -367,6 +367,16 @@ class SabyDoc(Base):
     carrier_id = Column(Integer, nullable=True)        # у заказа на перевозку
     next_check_at = Column(DateTime, nullable=True)    # когда снова спросить, подписал ли перевозчик
 
+class RegistrySettings(Base):
+    # Реестр 1С: чьи накладные наши. В общем реестре есть и кондитерка — её заказы
+    # Лавки идут на те же точки, отличить можно только по «Ответственному».
+    # Одна строка; last_upload — разбор последнего файла (JSON) для админ-панели
+    __tablename__ = "registry_settings"
+
+    id = Column(Integer, primary_key=True)
+    responsibles = Column(Text, nullable=True)     # по одному в строке; пусто — не отбираем
+    last_upload = Column(Text, nullable=True)
+
 class SabySettings(Base):
     # Настройки СБИС: строка 1 — Лавка (и общее: автообновление, проверка подписи
     # перевозчика), строка 2 — Самокат (только кнопки, погрузка, груз, машина).

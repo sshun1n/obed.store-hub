@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=1.28.0">
+    <link rel="stylesheet" href="/static/style.css?v=1.29.0">
     <link rel="expect" href="#hubEnd" blocking="render">
 </head>
 <body>
@@ -155,6 +155,22 @@
                 </div>
                 <p class="field-hint poll-last" id="sabySyncLast"></p>
             </div>
+
+            <div class="card">
+                <h2 class="card-title-small">Реестр 1С</h2>
+                <p class="field-hint mail-intro">В общем реестре есть и накладные кондитерки: её заказы Лавки идут на те же точки. Наши строки отбираются по «Ответственному», а между Лавкой и Самокатом делятся по «Контрагенту».</p>
+                <h3 class="form-subhead">Наши ответственные</h3>
+                <div class="reg-resp" id="regResp"><p class="field-hint">Загрузка…</p></div>
+                <form class="reg-add" id="regAddForm">
+                    <input type="text" id="regAddName" class="styled-text-input" placeholder="ФИО, как в 1С" maxlength="150" aria-label="Ответственный">
+                    <button type="submit" class="btn btn-secondary btn-sm">Добавить</button>
+                </form>
+                <p class="field-hint" id="regRespHint"></p>
+                <h3 class="form-subhead reg-subhead">Покупатели в 1С</h3>
+                <div id="regBuyers"></div>
+                <h3 class="form-subhead reg-subhead">Последняя загрузка</h3>
+                <div id="regLast"></div>
+            </div>
         </div>
     </div>
 
@@ -293,6 +309,7 @@
     <script src="/static/admin.js?v=1.9.4"></script>
     <script src="/static/mail-settings.js?v=1.13.1"></script>
     <script src="/static/saby-sync-settings.js?v=1.0.0"></script>
+    <script src="/static/registry-settings.js?v=1.0.0"></script>
     <div id="hubEnd" hidden></div>
 </body>
 </html>
