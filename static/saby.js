@@ -196,11 +196,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const deadline = d.upd_deadline ? new Date(d.upd_deadline + 'T00:00:00') : null;
         const daysLeft = deadline ? Math.round((deadline - new Date(new Date().toDateString())) / 86400000) : null;
         const due = deadline && updReady.size
-            ? ` · отправить до ${deadline.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}${daysLeft < 0 ? ' — просрочено' : daysLeft === 0 ? ' — сегодня' : ''}`
+            ? (daysLeft < 0 ? ' · просрочено' : daysLeft === 0 ? ' · до сегодня'
+                : ` · до ${deadline.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}`)
             : '';
         let state5;
         if (!accepted && !s.upd_sent) state5 = 'После акта приёмки от Лавки';
-        else state5 = `Отправлено ${s.upd_sent} из ${n}${updReady.size ? `, ждут ${updReady.size}` : ''}${due}${sel}`;
+        else {
+            // Коротко, в одну строку: «Отправлено 0/25 · до 24.11». «Ждут» — только если ждут
+            // не все неотправленные (у части ещё нет акта приёмки)
+            const waiting = updReady.size && updReady.size !== n - s.upd_sent ? `, ждут ${updReady.size}` : '';
+            state5 = `<span title="Отправлено ${s.upd_sent} из ${n}, ждут УПД ${updReady.size}${deadline && updReady.size ? `, срок — ${deadline.toLocaleDateString('ru-RU')}` : ''}">Отправлено ${s.upd_sent}/${n}${waiting}${due}${sel}</span>`;
+        }
         const body5 = admin && updReady.size
             ? btn('upd-sign', 'Подписать и отправить', { primary: true, disabled: !toUpd.length, title: toUpd.length ? '' : 'Среди выбранных точек УПД не ждёт никто' })
             : '';
