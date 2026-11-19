@@ -2350,6 +2350,8 @@ body:has(.saby-task.show) .toast-host { bottom: 112px; }
 .saby-step-doc span { font-size: 0.72rem; color: var(--muted); }
 .saby-step-doc:hover, .saby-step-doc:hover span { color: var(--red); }
 .saby-step-status { display: block; margin-top: 6px; }
+/* Стоимость рейса — в одну строку с состоянием заказа на перевозку */
+.saby-step-cost { margin-left: 10px; font-weight: 600; color: var(--ink); white-space: nowrap; vertical-align: middle; }
 
 /* Поля окна подписи прячутся атрибутом hidden: .form-group с display:flex его перебивал,
    и «Перевозчик» с пустым «Сертификатом» показывались там, где их быть не должно */
