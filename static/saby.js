@@ -148,7 +148,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const text = `№ ${esc(tr.number || '—')} · ${esc(tr.party || 'перевозчик не указан')}`;
             const doc = tr.link ? `<a class="saby-step-doc" href="${esc(tr.link)}" target="_blank" rel="noopener" title="Открыть в кабинете">${text} <span aria-hidden="true">↗</span></a>` : text;
             const status = tr.waiting ? '<span class="st st-draft" title="Заказ отправлен, перевозчик ещё не подписал">ждёт подписи перевозчика</span>' : chip(tr.state);
-            const state = `${doc}<span class="saby-step-status">${status}</span>`;
+            // Стоимость рейса называет перевозчик, подписывая заказ (СБИС отдаёт её в «Сумма»)
+            const cost = tr.signed_by_carrier && tr.amount != null
+                ? `<span class="saby-step-status" title="Указал перевозчик при подписи заказа">стоимость: <b>${esc(Number(tr.amount).toLocaleString('ru-RU', { maximumFractionDigits: 2 }))} ₽</b></span>` : '';
+            const state = `${doc}<span class="saby-step-status">${status}</span>${cost}`;
             const body3 = admin && tr.draft ? btn('transport-sign', 'Подписать', { primary: true }) : '';
             step3 = stepCard(3, 'Заказ на перевозку', state, body3, !tr.draft);
         } else {
