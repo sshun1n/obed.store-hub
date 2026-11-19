@@ -80,6 +80,35 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) { error.textContent = err.message; }
     });
 
+    // Потоки СБИС: сохраняются сразу при выборе и действуют без перезапуска
+    const readSel = el('sabyReadParallel'), writeSel = el('sabyWriteParallel');
+    function showThreads(t) {
+        readSel.innerHTML = Array.from({ length: t.max }, (_, i) => i + 1)
+            .map(n => `<option value="${n}">${n}${n === t.max ? ' — по умолчанию' : ''}</option>`).join('');
+        writeSel.innerHTML = t.write_choices
+            .map(n => `<option value="${n}">${n === 1 ? '1 — по одной, по умолчанию' : n}</option>`).join('');
+        readSel.value = String(t.read_parallel);
+        writeSel.value = String(t.write_parallel);
+    }
+    async function saveThreads() {
+        readSel.disabled = writeSel.disabled = true;
+        try {
+            const t = await Hub.api('/api/v1/saby/threads', { method: 'PUT',
+                body: { read_parallel: Number(readSel.value), write_parallel: Number(writeSel.value) } });
+            showThreads(t);
+            Hub.toast(t.write_effective < t.write_parallel
+                ? `Сохранено. Точек при записи — не больше запросов одновременно: сейчас ${t.write_effective}`
+                : 'Потоки СБИС сохранены');
+        } catch (err) { Hub.toast(err.message, 'error'); }
+        finally { readSel.disabled = writeSel.disabled = false; }
+    }
+    readSel.addEventListener('change', saveThreads);
+    writeSel.addEventListener('change', saveThreads);
+    readSel.disabled = writeSel.disabled = true;
+    Hub.api('/api/v1/saby/threads')
+        .then((t) => { showThreads(t); readSel.disabled = writeSel.disabled = false; })
+        .catch((err) => Hub.toast(err.message, 'error'));
+
     el('sabySyncConfigureBtn').disabled = true;
     enabled.disabled = true;
     Hub.api('/api/v1/saby/sync-settings')

@@ -243,44 +243,83 @@ def create_waybills(day: date, numbers: List[str], user: str, dry_run: bool = Fa
         if not box:
             raise TransportError("Нет ящика ЭДО Самоката: ни в «Юрлицах», ни в СБИС")
         first = sc.max_number(sid, sc.WAYBILL_TYPE) + 1
-        for i, order in enumerate(orders):
-            label = f"{order.order_no} · {ss.short_address(order.point.address)}"
-            number = str(first + i)
-            ss._step(f"{'Проверяю' if dry_run else 'Создаю'} ЭТрН {i + 1} из {len(orders)}", i + 1, len(orders))
-            ss._row(order.order_no, "work", "собираю ЭТрН" if dry_run else "создаю ЭТрН")
+        # Номера раздаём заранее — при записи в несколько потоков гонки за номер нет.
+        # Всё нужное потокам — простыми значениями, не объектами сессии
+        jobs = [{"label": f"{o.order_no} · {ss.short_address(o.point.address)}", "order_no": o.order_no,
+                 "address": o.point.address, "number": str(first + i), "order": SimpleNamespace(
+                     order_no=o.order_no, point=SimpleNamespace(gln=o.point.gln)),
+                 "payload": waybill_payload(s, own, buyer, carrier, o, str(first + i), transport, day, w[o.order_no])}
+                for i, o in enumerate(orders)]
+        transport_id, cargo_name, own_inn = transport.saby_id, s.cargo_name, own.inn
+
+        # 1. Сборка и сверка с требованиями — только чтение, в несколько потоков.
+        #    Не собрался или не сошёлся хоть один — не создаём ни одной
+        def build(job):
+            ss._row(job["order_no"], "work", "собираю ЭТрН")
+            file = sc.generate_attachment(sid, sa.WAYBILL_ATTACH, sa.WAYBILL_KND, sa.FORMAT_VERSION, job["payload"])
+            xml = (base64.b64decode(file["ДвоичныеДанные"]).decode("cp1251") if file.get("ДвоичныеДанные")
+                   else sc.download(sid, file["Ссылка"]))
+            problems = check_file(xml, job["order"])
+            if problems:
+                raise TransportError("файл не по требованиям: " + "; ".join(problems))
+            return file
+
+        files = sc.pmap(build, jobs, lambda i, n: ss._step(f"{'Проверяю' if dry_run else 'Собираю'} ЭТрН: {i} из {n}", i, n))
+        failed = {job["label"]: str(f) for job, f in zip(jobs, files) if isinstance(f, Exception)}
+        for job, f in zip(jobs, files):
+            if isinstance(f, Exception):
+                ss._row(job["order_no"], "error", str(f))
+            elif dry_run:
+                result["done"].append(job["label"])
+                ss._row(job["order_no"], "ok", "ЭТрН собрана")
+            elif failed:
+                ss._row(job["order_no"], "skip", "не создана: не собрались другие")
+        result["errors"].update(failed)
+        if dry_run:
+            return result
+        if failed:
+            result["notes"].append("Не собрался титул у части точек — не создано ни одной ЭТрН. Исправьте и повторите")
+            return result
+
+        # 2. Запись — по переключателю потоков (по умолчанию по одной)
+        total = len(jobs)
+        counter = sa._Counter()
+
+        def write(pair):
+            job, file = pair
+            ss._row(job["order_no"], "work", "создаю ЭТрН")
             try:
-                file = sc.generate_attachment(sid, sa.WAYBILL_ATTACH, sa.WAYBILL_KND, sa.FORMAT_VERSION,
-                                              waybill_payload(s, own, buyer, carrier, order, number, transport, day,
-                                                              w[order.order_no]))
-                xml = (base64.b64decode(file["ДвоичныеДанные"]).decode("cp1251") if file.get("ДвоичныеДанные")
-                       else sc.download(sid, file["Ссылка"]))
-                problems = check_file(xml, order)
-                if problems:
-                    raise TransportError("файл не по требованиям: " + "; ".join(problems))
-                if dry_run:
-                    result["done"].append(label)
-                    ss._row(order.order_no, "ok", "ЭТрН собрана")
-                    continue
-                doc = sc.write_document(sid, sc.TMS_URL, {
+                return sc.write_document(sid, sc.TMS_URL, {
                     "Тип": sc.WAYBILL_TYPE, "Регламент": {"Название": sa.WAYBILL_RULE},
-                    "НашаОрганизация": {"СвЮЛ": {"ИНН": own.inn}}, "Вложение": [{"Файл": file}],
+                    "НашаОрганизация": {"СвЮЛ": {"ИНН": own_inn}}, "Вложение": [{"Файл": file}],
                     "ДокументОснование": [{"ВидСвязи": "Обычная связь",
-                                           "Документ": {"Идентификатор": transport.saby_id}}],
+                                           "Документ": {"Идентификатор": transport_id}}],
                     # Получатель — головное «Умного ритейла», ящик задаём явно
                     "Контрагент": {"СвЮЛ": {"ИНН": ss.SAMOKAT_INN, "КПП": ss.SAMOKAT_KPP}, "Идентификатор": box},
                 })
-                db.add(database.SabyDoc(saby_id=doc["Идентификатор"], kind=WAYBILL_KIND, delivery_date=day,
-                                        number=str(doc.get("Номер") or "") or number, state=sc.state(doc) or sa.DRAFT,
-                                        order_no=order.order_no, cargo=s.cargo_name, parent_id=transport.saby_id,
-                                        address=order.point.address, ours=True, created_by_app=True, created_by=user,
-                                        read_at=datetime.utcnow(), link=doc.get("СсылкаДляНашаОрганизация")))
-                db.commit()
-                result["done"].append(label)
-                ss._row(order.order_no, "ok", "создана")
             except sc.SabyError as exc:
-                db.rollback()
-                result["errors"][label] = str(exc)
-                ss._row(order.order_no, "error", str(exc))
+                if sc.is_link_error(exc):
+                    raise TransportError(f"{exc}. Накладная могла создаться — «Обновить из СБИС» и проверьте, "
+                                         "прежде чем создавать снова") from exc
+                raise
+            finally:
+                ss._step(f"Создаю ЭТрН: {counter.next()} из {total}", counter.value, total)
+
+        pairs = list(zip(jobs, files))
+        # В базу пишет только этот поток; созданные сохраняются, даже если другие упали
+        for (job, _), doc in zip(pairs, sc.pmap_writes(write, pairs, on_brake=sa._brake(result))):
+            if isinstance(doc, Exception):
+                result["errors"][job["label"]] = str(doc)
+                ss._row(job["order_no"], "error", str(doc))
+                continue
+            db.add(database.SabyDoc(saby_id=doc["Идентификатор"], kind=WAYBILL_KIND, delivery_date=day,
+                                    number=str(doc.get("Номер") or "") or job["number"], state=sc.state(doc) or sa.DRAFT,
+                                    order_no=job["order_no"], cargo=cargo_name, parent_id=transport_id,
+                                    address=job["address"], ours=True, created_by_app=True, created_by=user,
+                                    read_at=datetime.utcnow(), link=doc.get("СсылкаДляНашаОрганизация")))
+            db.commit()
+            result["done"].append(job["label"])
+            ss._row(job["order_no"], "ok", "создана")
         return result
     finally:
         db.close()
@@ -288,8 +327,9 @@ def create_waybills(day: date, numbers: List[str], user: str, dry_run: bool = Fa
 
 # --- Чтение кабинета: состояния наших документов ---
 
-def refresh(sid: str, db, day: date, store) -> None:
-    """Номер и состояние наших заказа на перевозку и ЭТрН — из списков за день, без открытия."""
+def refresh(sid: str, db, day: date, store, background: bool = False) -> None:
+    """Номер и состояние наших заказа на перевозку и ЭТрН — из списков за день, без открытия.
+    В фоне пустой список ничего не помечает удалённым: пустой ответ похож на сбой."""
     mine = {d.saby_id: d for d in store.rows.values() if d.kind in (TRANSPORT_KIND, WAYBILL_KIND)}
     if not mine:
         return
@@ -301,6 +341,8 @@ def refresh(sid: str, db, day: date, store) -> None:
             if item["Идентификатор"] in mine:
                 seen.add(item["Идентификатор"])
                 store.put(item["Идентификатор"], kind, item)
+        if background and not seen:
+            continue
         for doc in mine.values():
             if doc.kind == kind and doc.saby_id not in seen:
                 doc.state = "Удалён"
@@ -315,21 +357,31 @@ def _adopt_waybills(sid: str, store) -> None:
     их не видит, а «Создать» сделает по тому же заказу вторую. Номер заказа Самоката лежит
     в ДрОГруз (у Лавки — в ТекстИнф ORDERS, поэтому общее чтение ЭТрН его не находит).
     Заказов на перевозку в день один-два — карточки читаем каждый раз."""
-    transports = [d for d in store.rows.values() if d.kind == TRANSPORT_KIND and d.state != "Удалён"]
+    transports = [d.saby_id for d in store.rows.values() if d.kind == TRANSPORT_KIND and d.state != "Удалён"]
     known = {d.saby_id for d in store.rows.values() if d.kind == WAYBILL_KIND}
-    for transport in transports:
-        card = sc.read_card(sid, sc.TMS_URL, transport.saby_id, sc.TRANSPORT_TYPE)
-        for child in sc.consequences(card, sc.WAYBILL_TYPE):
-            if child["id"] in known:
-                continue
-            wcard = sc.read_card(sid, sc.TMS_URL, child["id"], sc.WAYBILL_TYPE)
-            if wcard.get("Удален") == "Да":
-                continue
-            xml = sc.attachment_xml(sid, wcard, "ЭТрН")
-            found = DROGRUZ_RE.search(xml)
-            facts = sc.waybill_facts(xml)
-            order_no = (found.group(1) if found else "") or facts["order_no"]
-            store.put(child["id"], WAYBILL_KIND, wcard, order_no=order_no.strip() or None,
-                      cargo=facts["cargo"][:150] or None, address=facts["address"][:400] or None,
-                      parent_id=transport.saby_id, ours=True, read_at=datetime.utcnow())
-            known.add(child["id"])
+    cards = sc.pmap(lambda doc_id: sc.read_card(sid, sc.TMS_URL, doc_id, sc.TRANSPORT_TYPE), transports)
+    todo = []
+    for transport_id, card in zip(transports, cards):
+        if isinstance(card, Exception):
+            raise card
+        todo += [(transport_id, child["id"]) for child in sc.consequences(card, sc.WAYBILL_TYPE)
+                 if child["id"] not in known]
+
+    # Открываем только новые накладные — и в несколько потоков; в базу пишет этот поток
+    def read(pair):
+        wcard = sc.read_card(sid, sc.TMS_URL, pair[1], sc.WAYBILL_TYPE)
+        return wcard, ("" if wcard.get("Удален") == "Да" else sc.attachment_xml(sid, wcard, "ЭТрН"))
+
+    for (transport_id, child_id), got in zip(todo, sc.pmap(read, todo)):
+        if isinstance(got, Exception):
+            raise got
+        wcard, xml = got
+        if wcard.get("Удален") == "Да" or child_id in known:
+            continue
+        found = DROGRUZ_RE.search(xml)
+        facts = sc.waybill_facts(xml)
+        order_no = (found.group(1) if found else "") or facts["order_no"]
+        store.put(child_id, WAYBILL_KIND, wcard, order_no=order_no.strip() or None,
+                  cargo=facts["cargo"][:150] or None, address=facts["address"][:400] or None,
+                  parent_id=transport_id, ours=True, read_at=datetime.utcnow())
+        known.add(child_id)

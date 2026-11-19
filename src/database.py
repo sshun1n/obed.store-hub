@@ -397,6 +397,10 @@ class SabySettings(Base):
     sync_weekdays = Column(String(20), default="0,1,2,3,4,5,6")
     sync_last_at = Column(DateTime, nullable=True)          # местное время последнего запуска
     sync_last_result = Column(String(300), nullable=True)
+    # Потоки СБИС (общие для Лавки и Самоката, строка 1): запросов одновременно на всё
+    # приложение (1–5, справка Saby — не больше 5) и точек при записи (1 — по одной, как раньше)
+    read_parallel = Column(Integer, default=5)
+    write_parallel = Column(Integer, default=1)
     pickup_address = Column(String(300), default="Нижний Новгород, Агрономическая улица, д. 89")
     pickup_time = Column(String(5), default="06:30")        # подача машины
     departure_time = Column(String(5), default="06:45")     # убытие с погрузки

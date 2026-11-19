@@ -107,7 +107,12 @@ def saby_day(day: date, db: Session = Depends(get_db), user=Depends(auth.get_cur
             reg = {"number": row.number, "amount": _money(row.amount),
                    "sum_ok": abs(Decimal(row.amount) - gross) < Decimal("0.05"),
                    "number_ok": (shipment.number == row.number) if shipment and shipment.number else None}
+        order_doc = by_kind["order"].get(o.order_no)
+        # Проведена — только когда заказ утверждён. Реализация ушла, а заказ нет — ждёт утверждения
+        processed = bool(order_doc and order_doc.state in saby_client.FINISHED)
+        sent = bool(shipment and shipment.state and shipment.state not in (saby_actions.DRAFT, "Удалён"))
         points.append({
+            "processed": processed, "needs_approval": sent and not processed,
             "order_no": o.order_no, "point": o.point.name, "address": o.point.address,
             "address_short": short_address(o.point.address or ""), "gross": _money(gross),
             "quantity": o.total_quantity,
@@ -389,6 +394,36 @@ def saby_sync_put(data: SyncIn, db: Session = Depends(get_db), admin=Depends(aut
     return _sync_out(row)
 
 
+# --- Потоки СБИС ---
+
+class ThreadsIn(BaseModel):
+    read_parallel: int = Field(5, ge=1, le=saby_client.SABY_PARALLEL)
+    write_parallel: int = 1
+
+
+def _threads_out(row) -> Dict:
+    return {"read_parallel": saby_client.read_parallel(), "write_parallel": row.write_parallel or 1,
+            "write_effective": saby_client.write_parallel(), "max": saby_client.SABY_PARALLEL,
+            "write_choices": list(saby_client.WRITE_CHOICES)}
+
+
+@router.get("/threads")
+def saby_threads_get(db: Session = Depends(get_db), admin=Depends(auth.admin_only)):
+    return _threads_out(saby_actions.get_settings(db))
+
+
+@router.put("/threads")
+def saby_threads_put(data: ThreadsIn, db: Session = Depends(get_db), admin=Depends(auth.admin_only)):
+    if data.write_parallel not in saby_client.WRITE_CHOICES:
+        raise HTTPException(status_code=400, detail="Точек при записи: 1, 2, 3 или 5")
+    row = saby_actions.get_settings(db)
+    row.read_parallel, row.write_parallel = data.read_parallel, data.write_parallel
+    db.commit()
+    # Действует сразу, и на уже идущую операцию — со следующего запроса
+    saby_client.set_limits(data.read_parallel, data.write_parallel)
+    return _threads_out(row)
+
+
 # --- Действия ---
 
 LABELS = {
@@ -456,7 +491,11 @@ def saby_sign_prepare(data: SignPrepareIn, admin=Depends(auth.admin_only)):
     if saby_sync.busy():
         raise HTTPException(status_code=409, detail="Идёт другая операция с СБИС, дождитесь её окончания")
     try:
-        return saby_actions.prepare_signing(data.day, data.kind, data.orders, data.thumbprint)
+        # ПодготовитьДействие — запись: под общим замком, одна запись в кабинет за раз
+        with saby_client.writing("Подготовка подписи"):
+            return saby_actions.prepare_signing(data.day, data.kind, data.orders, data.thumbprint)
+    except saby_client.SabyBusy as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
     except saby_client.SabyError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -464,7 +503,12 @@ def saby_sign_prepare(data: SignPrepareIn, admin=Depends(auth.admin_only)):
 @router.post("/sign/send")
 def saby_sign_send(data: SignSendIn, admin=Depends(auth.admin_only)):
     try:
-        result = saby_actions.send_signing(data.token, {s.id: s.signature for s in data.signatures})
+        # Подготовка уже сделана — фоновое чтение не мешает, а другая запись подождёт:
+        # при «занято» подготовка не теряется, можно нажать ещё раз
+        with saby_client.writing("Отправка подписанного"):
+            result = saby_actions.send_signing(data.token, {s.id: s.signature for s in data.signatures})
+    except saby_client.SabyBusy as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
     except saby_client.SabyError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     # Перечитываем день фоном: после отправки состояния меняются

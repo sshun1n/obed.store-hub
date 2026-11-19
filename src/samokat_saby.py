@@ -26,7 +26,7 @@ import time
 from datetime import date, datetime, timedelta
 from typing import Callable, Dict, List, Optional, Tuple
 
-from src import database, samokat_parser, samokat_upd, saby_client as sc, saby_sync, sheet_sync, upd_registry
+from src import database, samokat_parser, samokat_upd, saby_actions, saby_client as sc, saby_sync, sheet_sync, upd_registry
 from src.api_lavka import short_address
 
 logger = logging.getLogger("SamokatSaby")
@@ -228,11 +228,14 @@ def _registry_row(db, day: date, address: str, used: set) -> Optional[database.U
 
 # --- Чтение кабинета за день ---
 
-def refresh_day(day: date, step: Callable = _step) -> Dict:
+def refresh_day(day: date, step: Callable = _step, serial: Optional[int] = None) -> Dict:
     """Что по заказам Самоката на этот день есть в кабинете: заказ, ответ на него, реализация.
 
     Только чтение. Реализации не открываются — номер и состояние из списка за день.
+    serial — у фонового чтения (saby_sync.commit): тогда пустой список заказов ничего
+    у нас не удаляет — пустой ответ слишком похож на сбой. Кнопка удаляет, как и раньше.
     """
+    background = serial is not None
     db = database.SessionLocal()
     try:
         step("Вход в СБИС")
@@ -261,21 +264,22 @@ def refresh_day(day: date, step: Callable = _step) -> Dict:
             elif ours is not None and ours.shipment_number:
                 # У заказа в СБИС реализации нет, а у нас записана — её удалили в кабинете
                 ours.shipment_id = ours.shipment_number = ours.shipment_state = ours.shipment_created_by = None
-        # Заказы этого дня, которых в кабинете больше нет
-        seen = {_number(i) for i, _, _ in orders}
-        for doc in list(store.rows.values()):
-            if doc.kind == ORDER_KIND and doc.order_no not in seen:
-                doc.state = "Удалён"
-        # Реализации, которых у заказов больше нет (удалены в кабинете)
-        alive = {link["id"] for link in links.values()}
-        for doc in list(store.rows.values()):
-            if doc.kind == SHIPMENT_KIND and doc.saby_id not in alive:
-                doc.state = "Удалён"
+        if orders or not background:
+            # Заказы этого дня, которых в кабинете больше нет
+            seen = {_number(i) for i, _, _ in orders}
+            for doc in list(store.rows.values()):
+                if doc.kind == ORDER_KIND and doc.order_no not in seen:
+                    doc.state = "Удалён"
+            # Реализации, которых у заказов больше нет (удалены в кабинете)
+            alive = {link["id"] for link in links.values()}
+            for doc in list(store.rows.values()):
+                if doc.kind == SHIPMENT_KIND and doc.saby_id not in alive:
+                    doc.state = "Удалён"
 
         # Наши заказ на перевозку и ЭТрН — состояния из списков TMS
         from src import samokat_transport
         step("Смотрю перевозку и ЭТрН")
-        samokat_transport.refresh(sid, db, day, store)
+        samokat_transport.refresh(sid, db, day, store, background=background)
 
         step("Смотрю реализации в списке за день")
         by_id = {i["Идентификатор"]: i for i in sc.list_documents(sid, sc.DOCS_URL, sc.SHIPMENT_TYPE,
@@ -292,7 +296,7 @@ def refresh_day(day: date, step: Callable = _step) -> Dict:
                 ours.shipment_id = link["id"]
                 ours.shipment_number = doc.number
                 ours.shipment_state = doc.state
-        db.commit()
+        saby_sync.commit(db, serial)
         return {"orders": len(orders), "shipments": len(links)}
     finally:
         db.close()
@@ -343,13 +347,13 @@ def create_drafts(day: date, user: str, dry_run: bool, only: Optional[List[str]]
         codes = sc.pmap(lambda t: item_codes(sid, t[1]), todo,
                         lambda i, n: _step(f"Сопоставление позиций с каталогом: {i} из {n}", i, n))
 
+        # Строки реестра и файлы УПД — здесь, по порядку; запись — по переключателю потоков
         used: set = set()
         if dry_run:
             _previews.clear()
-        for i, ((item, card, xml, ours, label, address), item_map) in enumerate(zip(todo, codes), start=1):
+        jobs = []
+        for (item, card, xml, ours, label, address), item_map in zip(todo, codes):
             number = _number(item)
-            _step(f"{'Проверяю' if dry_run else 'Создаю'} реализацию {i} из {len(todo)}", i, len(todo))
-            _row(number, "work", "собираю УПД" if dry_run else "создаю")
             try:
                 if isinstance(item_map, Exception):
                     raise item_map
@@ -362,36 +366,71 @@ def create_drafts(day: date, user: str, dry_run: bool, only: Optional[List[str]]
                     result["notes"].append(f"{label}: сумма в 1С {row.amount}, в заказе {gross}")
                 name, content = samokat_upd.build(xml, template, number=row.number, day=day, contract=CONTRACT,
                                                   receiver_box=receiver, sender_box=sender, codes=item_map)
-                if dry_run:
-                    _previews[number] = (name, content)
-                    result["done"].append(label)
-                    _row(number, "ok", "УПД собран")
-                    continue
-                contractor = dict(card.get("Контрагент") or {})
-                contractor["Идентификатор"] = receiver
-                doc = sc.write_document(sid, sc.DOCS_URL, {
-                    "Тип": sc.SHIPMENT_TYPE, "Номер": row.number, "Дата": day.strftime("%d.%m.%Y"),
-                    "Примечание": address,
-                    # Срок поставки — как в реализациях, которые СБИС делает сам из заказа:
-                    # в Расширении. Поле «Срок» документа СБИС показывает как срок оплаты
-                    "Расширение": {"СрокПоставки": f"{day.strftime('%d.%m.%Y')} {_time(xml)}"},
-                    "НашаОрганизация": card.get("НашаОрганизация") or {},
-                    "Контрагент": contractor,
-                    # Связь «Отгрузка», как у СБИС: по ней заказ считает отгруженное
-                    "ДокументОснование": [{"ВидСвязи": "Отгрузка", "Документ": {"Идентификатор": item["Идентификатор"]}}],
-                    "Вложение": [{"Файл": {"Имя": f"{name}.xml", "ДвоичныеДанные": base64.b64encode(content).decode()}}],
-                })
-                if ours is not None:
-                    ours.shipment_id = doc.get("Идентификатор")
-                    ours.shipment_number = row.number
-                    ours.shipment_state = sc.state(doc) or "Черновик"
-                    ours.shipment_created_by = user
-                result["done"].append(label)
-                _row(number, "ok", "черновик создан")
-                db.commit()
             except (sc.SabyError, samokat_upd.UpdError) as exc:
                 result["errors"][label] = str(exc)
                 _row(number, "error", str(exc))
+                continue
+            if dry_run:
+                _previews[number] = (name, content)
+                result["done"].append(label)
+                _row(number, "ok", "УПД собран")
+                continue
+            _row(number, "wait", "в очереди")
+            jobs.append({"item": item, "card": card, "xml": xml, "ours": ours, "label": label, "address": address,
+                         "number": number, "doc_number": row.number, "name": name, "content": content})
+        if dry_run or not jobs:
+            db.commit()
+            return result
+
+        total = len(jobs)
+        counter = saby_actions._Counter()
+
+        def write(job):
+            _row(job["number"], "work", "создаю")
+            contractor = dict(job["card"].get("Контрагент") or {})
+            contractor["Идентификатор"] = receiver
+            try:
+                return sc.write_document(sid, sc.DOCS_URL, {
+                    "Тип": sc.SHIPMENT_TYPE, "Номер": job["doc_number"], "Дата": day.strftime("%d.%m.%Y"),
+                    "Примечание": job["address"],
+                    # Срок поставки — как в реализациях, которые СБИС делает сам из заказа:
+                    # в Расширении. Поле «Срок» документа СБИС показывает как срок оплаты
+                    "Расширение": {"СрокПоставки": f"{day.strftime('%d.%m.%Y')} {_time(job['xml'])}"},
+                    "НашаОрганизация": job["card"].get("НашаОрганизация") or {},
+                    "Контрагент": contractor,
+                    # Связь «Отгрузка», как у СБИС: по ней заказ считает отгруженное
+                    "ДокументОснование": [{"ВидСвязи": "Отгрузка", "Документ": {"Идентификатор": job["item"]["Идентификатор"]}}],
+                    "Вложение": [{"Файл": {"Имя": f"{job['name']}.xml",
+                                           "ДвоичныеДанные": base64.b64encode(job["content"]).decode()}}],
+                })
+            except sc.SabyError as exc:
+                # Обрыв связи: запись могла пройти. Не повторяем — смотрим, есть ли реализация у заказа
+                if not sc.is_link_error(exc):
+                    raise
+                again = sc.read_card(sid, sc.DOCS_URL, job["item"]["Идентификатор"], sc.ORDER_TYPE)
+                found = sc.consequences(again, sc.SHIPMENT_TYPE)
+                if not found:
+                    raise SamokatError(f"{exc}. Реализации у заказа нет — можно повторить «Создать»") from exc
+                return {"Идентификатор": found[-1]["id"], "Состояние": {"Название": "Черновик"}}
+            finally:
+                _step(f"Создаю реализации: {counter.next()} из {total}", counter.value, total)
+
+        _step(f"Создаю реализации: 0 из {total}", 0, total)
+        # В базу пишет только этот поток
+        for job, doc in zip(jobs, sc.pmap_writes(write, jobs, on_brake=saby_actions._brake(result))):
+            if isinstance(doc, Exception):
+                result["errors"][job["label"]] = str(doc)
+                _row(job["number"], "error", str(doc))
+                continue
+            ours = job["ours"]
+            if ours is not None:
+                ours.shipment_id = doc.get("Идентификатор")
+                ours.shipment_number = job["doc_number"]
+                ours.shipment_state = sc.state(doc) or "Черновик"
+                ours.shipment_created_by = user
+            result["done"].append(job["label"])
+            _row(job["number"], "ok", "черновик создан")
+            db.commit()
         db.commit()
         return result
     finally:
@@ -424,30 +463,53 @@ def approve_orders(day: date, only: Optional[List[str]] = None) -> Dict:
             todo.append(item)
     cards = sc.pmap(lambda it: sc.read_card(sid, sc.DOCS_URL, it["Идентификатор"], sc.ORDER_TYPE), todo,
                     lambda i, n: _step(f"Читаю заказы: {i} из {n}", i, n))
-    for i, (item, card) in enumerate(zip(todo, cards), start=1):
+    ready = []
+    for item, card in zip(todo, cards):
         number = _number(item)
-        _step(f"Утверждаю заказ {i} из {len(todo)}", i, len(todo))
+        if isinstance(card, Exception):
+            result["errors"][number] = str(card)
+            _row(number, "error", str(card))
+            continue
+        stage = next((st for st in card.get("Этап") or [] if st.get("Название") == "Утверждение"
+                      and st.get("Служебный") != "Да"), None)
+        action = next((a for a in (stage or {}).get("Действие") or [] if a.get("Название") == "Утвердить"), None)
+        if action is None:
+            result["skipped"].append(number)
+            _row(number, "skip", "утверждать нечего")
+            continue
+        if action.get("ТребуетПодписания") == "Да":
+            result["need_sign"].append(number)
+            _row(number, "wait", "нужна подпись")
+            continue
+        ready.append((item, stage.get("Идентификатор", "")))
+
+    total = len(ready)
+    counter = saby_actions._Counter()
+
+    def approve(entry):
+        item, stage_id = entry
+        _row(_number(item), "work", "утверждаю")
         try:
-            if isinstance(card, Exception):
-                raise card
-            stage = next((st for st in card.get("Этап") or [] if st.get("Название") == "Утверждение"
-                          and st.get("Служебный") != "Да"), None)
-            action = next((a for a in (stage or {}).get("Действие") or [] if a.get("Название") == "Утвердить"), None)
-            if action is None:
-                result["skipped"].append(number)
-                _row(number, "skip", "утверждать нечего")
-                continue
-            if action.get("ТребуетПодписания") == "Да":
-                result["need_sign"].append(number)
-                _row(number, "wait", "нужна подпись")
-                continue
-            _row(number, "work", "утверждаю")
-            sc.run_action(sid, sc.DOCS_URL, item["Идентификатор"], "Утверждение", "Утвердить", stage.get("Идентификатор", ""))
+            sc.run_action(sid, sc.DOCS_URL, item["Идентификатор"], "Утверждение", "Утвердить", stage_id)
+        except sc.SabyError as exc:
+            if not sc.is_link_error(exc):
+                raise
+            # Обрыв связи: не повторяем — смотрим по списку, ушёл ли ответ на заказ
+            again = next((i for i in sc.list_documents(sid, sc.DOCS_URL, sc.ORDER_TYPE, mask=_number(item), pages=1)
+                          if i["Идентификатор"] == item["Идентификатор"]), None)
+            if again is None or APPROVED not in sc.attachments(again):
+                raise SamokatError(f"{exc}. По кабинету заказ не утверждён — можно повторить") from exc
+        finally:
+            _step(f"Утверждаю заказы: {counter.next()} из {total}", counter.value, total)
+
+    for (item, _), got in zip(ready, sc.pmap_writes(approve, ready, on_brake=saby_actions._brake(result))):
+        number = _number(item)
+        if isinstance(got, Exception):
+            result["errors"][number] = str(got)
+            _row(number, "error", str(got))
+        else:
             result["done"].append(number)
             _row(number, "ok", "утверждён")
-        except sc.SabyError as exc:
-            result["errors"][number] = str(exc)
-            _row(number, "error", str(exc))
     if result["need_sign"]:
         result["notes"].append(f"Утверждение требует подписи: {len(result['need_sign'])} — откроется окно подписи")
     return result
@@ -459,6 +521,7 @@ LABELS = {"refresh": "Чтение СБИС · Самокат", "check": "Про
           "create": "Черновики реализаций · Самокат", "transport": "Заказ на перевозку · Самокат",
           "waybills": "Создание ЭТрН · Самокат", "waybills_check": "Проверка ЭТрН · Самокат",
           "approve": "Утверждение заказов · Самокат"}
+WRITE_MODES = ("create", "transport", "waybills", "approve")   # check и waybills_check в кабинет не пишут
 ROW_KINDS = {"check": "shipment", "create": "shipment", "waybills": "waybill", "waybills_check": "waybill",
              "approve": "order"}
 
@@ -479,7 +542,10 @@ def _worker(day: date, user: str, mode: str, only: Optional[List[str]], carrier_
         # Одна операция с кабинетом за раз — общий замок со страницей «СБИС»
         with saby_sync._lock:
             try:
-                if mode != "refresh":
+                if mode in WRITE_MODES:
+                    with sc.writing(LABELS[mode]):
+                        _progress["result"] = _run(day, user, mode, only, carrier_id)
+                elif mode != "refresh":
                     _progress["result"] = _run(day, user, mode, only, carrier_id)
             finally:
                 # Перечитываем всегда: часть черновиков могла успеть создаться до ошибки

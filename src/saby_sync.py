@@ -48,11 +48,28 @@ def track(prog: Dict, kind: str, orders) -> None:
     prog["rows"] = {o: {"s": "wait", "t": ""} for o in orders if o}
 
 
+_rows_lock = threading.Lock()
+
+
 def row(prog: Dict, order_no: str, state: str, text: str = "") -> None:
     if order_no and prog.get("kind"):
-        rows = dict(prog.get("rows") or {})
-        rows[order_no] = {"s": state, "t": text[:200]}
-        prog["rows"] = rows      # целиком: читатель в другом потоке не увидит словарь на полпути
+        with _rows_lock:     # точки пишут из нескольких потоков — без замка одна затёрла бы другую
+            rows = dict(prog.get("rows") or {})
+            rows[order_no] = {"s": state, "t": text[:200]}
+            prog["rows"] = rows      # целиком: читатель в другом потоке не увидит словарь на полпути
+
+
+class Stale(sc.SabyError):
+    """Пока фон читал, в кабинет записали — прочитанное устарело и не сохраняется."""
+
+
+def commit(db, serial: Optional[int]) -> None:
+    """Сохранить прочитанное. serial — номер записи на начало фонового чтения: если с тех
+    пор кто-то писал в кабинет (подпись идёт мимо общей очереди), откатываем."""
+    if serial is not None and sc.write_serial() != serial:
+        db.rollback()
+        raise Stale("в кабинет писали, пока шло чтение — обновлю в следующий раз")
+    db.commit()
 
 
 def _step(text: str, done: Optional[int] = None, total: Optional[int] = None) -> None:
@@ -186,12 +203,26 @@ def _transport(sid: str, store: _Store, ours: Set[str]) -> None:
                   if t["Идентификатор"] not in samokat]
     foreign_waybills: Set[str] = set()
     our_waybills: Dict[str, str] = {}
-    # Карточки заказов на перевозку читаем каждый раз: их два в день, а только из
-    # них видно, какие ЭТрН чужие и открывать их не нужно
-    for item in transports:
+    # Карточки заказов на перевозку читаем каждый раз: только из них видно, какие ЭТрН
+    # чужие и открывать их не нужно. Груз заявки не меняется — файл заявки скачиваем,
+    # только пока груз не известен. Всё это — в несколько потоков, в базу пишет этот
+    # Из базы — здесь, а не в потоках: сессия SQLAlchemy не для нескольких потоков
+    known_cargo = {i["Идентификатор"]: (store.get(i["Идентификатор"]).cargo or "")
+                   for i in transports if store.get(i["Идентификатор"]) is not None}
+
+    def read(item):
         card = sc.read_card(sid, sc.TMS_URL, item["Идентификатор"], sc.TRANSPORT_TYPE)
+        if known_cargo.get(item["Идентификатор"]):
+            return card, known_cargo[item["Идентификатор"]]
         xml = sc.attachment_xml(sid, card, "ЗаказЗаявка")
-        cargo = (sc.CARGO_RE.search(xml).group(1) if sc.CARGO_RE.search(xml) else "")
+        found = sc.CARGO_RE.search(xml)
+        return card, (found.group(1) if found else "")
+
+    cards = sc.pmap(read, transports)
+    for item, got in zip(transports, cards):
+        if isinstance(got, Exception):
+            raise got
+        card, cargo = got
         mine = cargo.strip().lower() == OBED_CARGO
         store.put(item["Идентификатор"], "transport", item, cargo=cargo[:150] or None, ours=mine,
                   party=sc.party_name(card)[:300] or None, read_at=datetime.utcnow())
@@ -228,7 +259,8 @@ def _transport(sid: str, store: _Store, ours: Set[str]) -> None:
                   parent_id=our_waybills.get(item["Идентификатор"]), ours=mine, read_at=datetime.utcnow())
 
 
-def refresh_day(day: date) -> None:
+def refresh_day(day: date, serial: Optional[int] = None) -> None:
+    """serial — у фонового чтения: номер записи на его начало (см. commit)."""
     db = database.SessionLocal()
     try:
         ours = {o.order_no for o in db.query(database.LavkaOrder).filter(database.LavkaOrder.delivery_date == day)}
@@ -238,11 +270,11 @@ def refresh_day(day: date) -> None:
         _step("Вход в СБИС")
         sid = sc.login()
         links = _orders(sid, store, ours)
-        db.commit()
+        commit(db, serial)
         _shipments(sid, store, links)
-        db.commit()
+        commit(db, serial)
         _transport(sid, store, ours)
-        db.commit()
+        commit(db, serial)
     finally:
         db.close()
 
@@ -260,7 +292,8 @@ def _worker(day: date, label: str, action: Optional[Callable[[], Dict]]) -> None
                     # Перед записью — свежий кабинет: точку могли провести руками минуту назад
                     _step("Сверяю день с кабинетом")
                     refresh_day(day)
-                    _progress["result"] = action() or {}
+                    with sc.writing(label):
+                        _progress["result"] = action() or {}
             finally:
                 _step("Перечитываю день")
                 refresh_day(day)
@@ -278,7 +311,7 @@ def _worker(day: date, label: str, action: Optional[Callable[[], Dict]]) -> None
 def busy() -> bool:
     """Идёт ли какая-нибудь операция с кабинетом: своя или Самоката."""
     from src import samokat_saby     # здесь: samokat_saby сам импортирует этот модуль
-    return bool(_progress["running"] or samokat_saby.progress()["running"])
+    return bool(_progress["running"] or samokat_saby.progress()["running"] or sc.writing_now())
 
 
 def start(day: date, label: str = "Чтение СБИС", action: Optional[Callable[[], Dict]] = None,
@@ -327,11 +360,15 @@ def _auto_worker(days: list) -> None:
                 _progress["day"] = day.isoformat()
                 _step(f"Обновляю {day.strftime('%d.%m')} ({i} из {len(days)})", i, len(days))
                 try:
+                    if sc.writing_now():
+                        raise Stale("идёт запись в СБИС — обновлю в следующий раз")
+                    serial = sc.write_serial()
                     if lavka:
-                        refresh_day(day)
+                        refresh_day(day, serial)
                     if samokat:
+                        # В фоне пустой список кабинета ничего у нас не удаляет: слишком похоже на сбой
                         samokat_saby.refresh_day(day, step=lambda text, *_: _step(
-                            f"Самокат {day.strftime('%d.%m')}: {text}", i, len(days)))
+                            f"Самокат {day.strftime('%d.%m')}: {text}", i, len(days)), serial=serial)
                     done.append(day.strftime("%d.%m"))
                 except sc.SabyError as exc:
                     failed[day.strftime("%d.%m")] = str(exc)

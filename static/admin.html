@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=1.29.0">
+    <link rel="stylesheet" href="/static/style.css?v=1.29.2">
     <link rel="expect" href="#hubEnd" blocking="render">
 </head>
 <body>
@@ -154,6 +154,19 @@
                     <button type="button" class="btn btn-secondary btn-sm" id="sabySyncConfigureBtn">Настроить</button>
                 </div>
                 <p class="field-hint poll-last" id="sabySyncLast"></p>
+                <h3 class="form-subhead">Потоки</h3>
+                <div class="saby-threads">
+                    <label class="saby-thread">
+                        <span>Запросов к СБИС одновременно</span>
+                        <select id="sabyReadParallel" class="styled-text-input" aria-label="Запросов к СБИС одновременно"></select>
+                        <span class="field-hint">На всё приложение: чтения, скачивания и запись вместе. Справка Saby просит не больше 5, иначе СБИС ограничит или заблокирует сессию. Кабинет общий с ka-webapp — не запускайте оба приложения одновременно.</span>
+                    </label>
+                    <label class="saby-thread">
+                        <span>Точек при записи</span>
+                        <select id="sabyWriteParallel" class="styled-text-input" aria-label="Точек при записи"></select>
+                        <span class="field-hint">Сколько точек создавать и проводить одновременно (реализации, ЭТрН, утверждение заказов Самоката). 1 — по одной, как раньше. Подпись всегда идёт по одной. Если СБИС начнёт ограничивать, операция сама перейдёт на одну точку.</span>
+                    </label>
+                </div>
             </div>
 
             <div class="card">
@@ -308,7 +321,7 @@
     <script src="/static/time-picker.js?v=1.21.0"></script>
     <script src="/static/admin.js?v=1.9.4"></script>
     <script src="/static/mail-settings.js?v=1.13.1"></script>
-    <script src="/static/saby-sync-settings.js?v=1.0.0"></script>
+    <script src="/static/saby-sync-settings.js?v=1.1.0"></script>
     <script src="/static/registry-settings.js?v=1.0.0"></script>
     <div id="hubEnd" hidden></div>
 </body>

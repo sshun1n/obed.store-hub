@@ -1800,6 +1800,11 @@ textarea.styled-text-input { resize: vertical; min-height: 64px; line-height: 1.
 }
 .stats-grid[hidden], .lavka-admin-actions[hidden] { display: none; }
 .poll-last { margin: 10px 0 12px; }
+/* Потоки СБИС в админ-панели */
+.saby-threads { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.saby-thread { display: flex; flex-direction: column; gap: 6px; font-weight: 600; }
+.saby-thread select { max-width: 220px; }
+.saby-thread .field-hint { font-weight: 400; }
 
 /* Привязка штрих-кода Лавки */
 .lavka-link-btn { margin-left: 6px; padding: 3px 10px; font-size: 0.72rem; }

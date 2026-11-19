@@ -16,18 +16,17 @@
 """
 from __future__ import annotations
 
-import base64
+import http.client
 import json
 import os
 import re
 import threading
+import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import date
 from typing import Callable, Dict, Iterator, List, Optional
-
-import requests
-from requests.adapters import HTTPAdapter
 
 AUTH_URL = "https://online.sbis.ru/auth/service/"
 TMS_URL = "https://tms.saby.ru/service/"
@@ -41,7 +40,11 @@ WAYBILL_TYPE = "ConsignmentNote"   # ЭТрН
 
 FINISHED = {"Выполнение завершено успешно", "Выполнение завершено с проблемами"}
 PAGE = 50
-WORKERS = 6     # одновременных чтений: 30 карточек за 1,5 с вместо 8 с, Saby не возражает
+# Справка Saby: «следите, чтобы количество параллельных потоков было не больше 5», иначе
+# СБИС ограничит потоки или заблокирует сессию. Предел — на всё приложение, а не на операцию:
+# кабинет и логин общие с ka-webapp, поэтому оба приложения одновременно не запускают
+SABY_PARALLEL = 5
+WRITE_CHOICES = (1, 2, 3, 5)
 
 _local = threading.local()
 
@@ -58,14 +61,160 @@ def configured() -> bool:
     return bool(os.getenv("SABY_LOGIN") and os.getenv("SABY_PASSWORD"))
 
 
-def _http() -> requests.Session:
-    """Своё соединение у каждого потока: TLS-рукопожатие одно на поток, а не на каждый вызов."""
-    session = getattr(_local, "session", None)
-    if session is None:
-        session = requests.Session()
-        session.mount("https://", HTTPAdapter(pool_connections=4, pool_maxsize=4))
-        _local.session = session
-    return session
+class SabyBusy(SabyError):
+    """Идёт другая запись в кабинет — вторую не начинаем."""
+
+
+# --- Общий предел запросов ---
+
+class _Gate:
+    """Семафор с изменяемым пределом: все запросы к СБИС приложения идут через него."""
+
+    def __init__(self, limit: int):
+        self._cond = threading.Condition()
+        self._limit = limit
+        self._busy = 0
+
+    @property
+    def limit(self) -> int:
+        return self._limit
+
+    def set_limit(self, limit: int) -> None:
+        with self._cond:
+            self._limit = max(1, min(int(limit), SABY_PARALLEL))
+            self._cond.notify_all()
+
+    def __enter__(self):
+        with self._cond:
+            while self._busy >= self._limit:
+                self._cond.wait()
+            self._busy += 1
+        return self
+
+    def __exit__(self, *exc):
+        with self._cond:
+            self._busy -= 1
+            self._cond.notify_all()
+
+
+_GATE = _Gate(SABY_PARALLEL)
+_WRITE_PARALLEL = [1]
+
+
+def set_limits(read: Optional[int] = None, write: Optional[int] = None) -> None:
+    """Потоки из админ-панели: действуют сразу, без перезапуска."""
+    if read:
+        _GATE.set_limit(read)
+    if write:
+        _WRITE_PARALLEL[0] = write if write in WRITE_CHOICES else 1
+
+
+def read_parallel() -> int:
+    return _GATE.limit
+
+
+def write_parallel() -> int:
+    return min(_WRITE_PARALLEL[0], _GATE.limit)
+
+
+# --- Одна запись в кабинет за раз ---
+#
+# Операции и так идут по одной (saby_sync._lock), но подпись идёт мимо них прямо из
+# запроса. Замок записи держат все, кто пишет: действия, подготовка и отправка подписи.
+# serial растёт с каждой записью — фоновое чтение по нему видит, что, пока оно читало,
+# кабинет поменялся, и прочитанное не сохраняет (saby_sync.Stale).
+
+_WRITE_LOCK = threading.Lock()
+_writing: Dict[str, object] = {"title": None, "serial": 0}
+
+
+@contextmanager
+def writing(title: str):
+    if not _WRITE_LOCK.acquire(blocking=False):
+        raise SabyBusy(f"Не запущено: идёт другая запись в СБИС — «{_writing['title'] or 'операция'}»")
+    _writing["title"] = title
+    _writing["serial"] = int(_writing["serial"]) + 1
+    try:
+        yield
+    finally:
+        _writing["title"] = None
+        _WRITE_LOCK.release()
+
+
+def writing_now() -> bool:
+    return _WRITE_LOCK.locked()
+
+
+def write_serial() -> int:
+    return int(_writing["serial"])
+
+
+# --- Транспорт ---
+#
+# Чтения идут через соединение, открытое у потока: без нового TLS-рукопожатия вызов
+# вдвое быстрее (90 мс против 170). Оборвалось устаревшее соединение — один повтор.
+# Записи — всегда по свежему соединению и без повтора: ответ мог потеряться после
+# того, как СБИС запись выполнил, и повтор отправил бы документ второй раз.
+
+READ_METHODS = frozenset({
+    "СБИС.Аутентифицировать", "СБИС.СписокДокументов", "СБИС.ПрочитатьДокумент",
+    "СБИС.СгенерироватьВложение",       # только собирает файл, документа не создаёт
+    "СБИС.ИнформацияОКонтрагенте",
+})
+_STALE = (http.client.RemoteDisconnected, http.client.CannotSendRequest, http.client.BadStatusLine,
+          ConnectionResetError, BrokenPipeError, ConnectionAbortedError)
+TIMEOUT = 40
+
+
+def _connections() -> Dict[str, http.client.HTTPSConnection]:
+    conns = getattr(_local, "conns", None)
+    if conns is None:
+        conns = _local.conns = {}
+    return conns
+
+
+def _drop(netloc: str) -> None:
+    conn = _connections().pop(netloc, None)
+    if conn is not None:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _send(url: str, body: bytes, headers: dict, *, reuse: bool) -> tuple:
+    parts = urllib.parse.urlsplit(url)
+    path = parts.path + (f"?{parts.query}" if parts.query else "")
+    if not reuse:
+        conn = http.client.HTTPSConnection(parts.netloc, timeout=TIMEOUT)
+        try:
+            conn.request("POST", path, body, headers)
+            response = conn.getresponse()
+            return response.status, response.read()
+        finally:
+            conn.close()
+    for attempt in (1, 2):
+        conns = _connections()
+        conn = conns.get(parts.netloc)
+        if conn is None:
+            conn = conns[parts.netloc] = http.client.HTTPSConnection(parts.netloc, timeout=TIMEOUT)
+        reused = conn.sock is not None
+        try:
+            conn.request("POST", path, body, headers)
+            response = conn.getresponse()
+            data = response.read()
+        except _STALE:
+            _drop(parts.netloc)
+            if not reused or attempt == 2:      # оборвалось свежее — это сбой, а не «устарело»
+                raise
+            continue
+        except Exception:
+            _drop(parts.netloc)
+            raise
+        if response.will_close:
+            _drop(parts.netloc)
+        return response.status, data
+    raise http.client.HTTPException("нет ответа")
 
 
 def _post(url: str, method: str, params: dict, sid: str = "") -> dict:
@@ -75,29 +224,45 @@ def _post(url: str, method: str, params: dict, sid: str = "") -> dict:
     if sid:
         headers[SESSION_HEADER] = sid
     try:
-        response = _http().post(url, data=body, headers=headers, timeout=40)
+        with _GATE:
+            status, raw = _send(url, body, headers, reuse=method in READ_METHODS)
     except Exception as exc:
         raise SabyError(f"Не удалось связаться с Saby: {exc}") from exc
+    text = raw.decode("utf-8", errors="replace")
     try:
-        payload = json.loads(response.content.decode("utf-8"))
-    except (ValueError, UnicodeDecodeError) as exc:
-        raise SabyError(f"HTTP {response.status_code}: {response.text[:300]}") from exc
+        payload = json.loads(text)
+    except ValueError as exc:
+        raise SabyError(f"HTTP {status}: {text[:300]}") from exc
     if "error" in payload:
         error = payload["error"]
         details = (error.get("data") or {}).get("details") or ""
         raise SabyError(f"{error.get('message', '')} {details}".strip() or "Saby вернула ошибку")
-    if response.status_code >= 400:
-        raise SabyError(f"HTTP {response.status_code}: {response.text[:300]}")
+    if status >= 400:
+        raise SabyError(f"HTTP {status}: {text[:300]}")
     return payload.get("result")
 
 
-def pmap(fn: Callable, items: list, on_done: Optional[Callable[[int, int], None]] = None) -> list:
+def fetch(sid: str, link: str, timeout: int = 60) -> bytes:
+    """Файл документа по ссылке. Ссылка может вести на другой хост с переадресацией,
+    поэтому urllib, но тоже под общим пределом."""
+    request = urllib.request.Request(link, headers={SESSION_HEADER: sid})
+    try:
+        with _GATE, urllib.request.urlopen(request, timeout=timeout) as response:
+            return response.read()
+    except Exception as exc:
+        raise SabyError(f"Не скачался файл документа: {exc}") from exc
+
+
+# --- Несколько потоков ---
+
+def pmap(fn: Callable, items: list, on_done: Optional[Callable[[int, int], None]] = None,
+         workers: Optional[int] = None) -> list:
     """fn по каждому элементу в несколько потоков, результаты в том же порядке.
 
-    Только для чтения: запись документов идёт по одному, чтобы ошибка одной
-    точки не перемешивалась с другими. Исключение элемента возвращается на его
-    месте, а не прерывает остальные — решает вызывающий.
+    Для чтений. Исключение элемента возвращается на его месте, а не прерывает
+    остальные — решает вызывающий. В базу из fn не пишем: пишет вызывающий поток.
     """
+    items = list(items)
     if not items:
         return []
     out: list = [None] * len(items)
@@ -111,12 +276,62 @@ def pmap(fn: Callable, items: list, on_done: Optional[Callable[[int, int], None]
             out[index] = exc
         with lock:
             done[0] += 1
-            if on_done:
-                on_done(done[0], len(items))
+            count = done[0]
+        if on_done:
+            on_done(count, len(items))
 
-    with ThreadPoolExecutor(max_workers=min(WORKERS, len(items)), thread_name_prefix="saby-read") as pool:
+    size = max(1, min(workers or _GATE.limit, len(items)))
+    with ThreadPoolExecutor(max_workers=size, thread_name_prefix="saby") as pool:
         list(pool.map(run, range(len(items))))
     return out
+
+
+LIMIT_HINTS = ("сесси", "лимит", "превыш", "ограничен", "блокир", "HTTP 429", "HTTP 503", "HTTP 502", "HTTP 401")
+
+
+def is_limit_error(exc: BaseException) -> bool:
+    text = str(exc).lower()
+    return any(h.lower() in text for h in LIMIT_HINTS)
+
+
+def is_link_error(exc: BaseException) -> bool:
+    """Обрыв связи: запись могла и пройти — повторять нельзя, только перечитать."""
+    return "Не удалось связаться с Saby" in str(exc)
+
+
+def pmap_writes(fn: Callable, items: list, on_brake: Optional[Callable[[BaseException], None]] = None) -> list:
+    """Записи по точкам. При 1 потоке (по умолчанию) — простой цикл в прежнем порядке.
+    При N — N точек одновременно, каждую ведёт один поток, поэтому шаги внутри точки
+    идут по порядку. После ошибки лимита или сессии новые точки идут строго по одной."""
+    items = list(items)
+    workers = write_parallel()
+    if workers <= 1 or len(items) <= 1:
+        out = []
+        for item in items:
+            try:
+                out.append(fn(item))
+            except Exception as exc:     # noqa: BLE001
+                out.append(exc)
+        return out
+    brake, serial = threading.Event(), threading.Lock()
+
+    def call(item):
+        try:
+            return fn(item)
+        except Exception as exc:     # noqa: BLE001
+            if is_limit_error(exc) and not brake.is_set():
+                brake.set()
+                if on_brake:
+                    on_brake(exc)
+            return exc
+
+    def run(item):
+        if brake.is_set():
+            with serial:
+                return call(item)
+        return call(item)
+
+    return pmap(run, items, workers=workers)
 
 
 def login() -> str:
@@ -175,12 +390,7 @@ def read_card(sid: str, url: str, ident: str, kind: str, state: str = "") -> dic
 
 
 def download(sid: str, link: str) -> str:
-    try:
-        response = _http().get(link, headers={SESSION_HEADER: sid}, timeout=30)
-        response.raise_for_status()
-        return response.content.decode("cp1251", errors="replace")
-    except Exception as exc:
-        raise SabyError(f"Не скачался файл документа: {exc}") from exc
+    return fetch(sid, link, timeout=30).decode("cp1251", errors="replace")
 
 
 def attachment_xml(sid: str, card: dict, kind: str) -> str:
@@ -272,34 +482,31 @@ def pending_action(card: dict, preferred: tuple) -> tuple:
     raise SabyError("не понял, какой шаг подписывать: " + ", ".join(f"«{a}: {b}»" for a, b in options))
 
 
-def prepare_sign(sid: str, url: str, doc_id: str, kind: str, thumbprint: str, preferred: tuple,
-                 fixed: Optional[tuple] = None) -> dict:
-    """Готовит документ к подписи в браузере и отдаёт файлы, которые надо подписать.
+def sign_step(sid: str, url: str, doc_id: str, kind: str, preferred: tuple, fixed: Optional[tuple] = None) -> tuple:
+    """Этап и переход, которые подписывать. Только чтение — можно в несколько потоков.
 
     fixed — этап и действие, известные заранее (УПД по реализации). Тогда карточку
     не читаем вовсе: открывать незавершённую реализацию нельзя (см. read_card).
     """
     if fixed:
-        stage, action = fixed
-    else:
-        card = read_card(sid, url, doc_id, kind)
-        stage, action = pending_action(card, preferred)
+        return fixed
+    return pending_action(read_card(sid, url, doc_id, kind), preferred)
+
+
+def prepare_action(sid: str, url: str, doc_id: str, stage: str, action: str, thumbprint: str) -> List[dict]:
+    """ПодготовитьДействие под подпись — это запись, по одному документу. Отдаёт файлы
+    к подписи: {id, name, link}; скачивает их вызывающий (fetch, можно параллельно)."""
     prepared = _post(url, "СБИС.ПодготовитьДействие", {"Документ": {"Идентификатор": doc_id, "Этап": {
         "Название": stage, "Действие": {"Название": action, "Сертификат": {"Отпечаток": thumbprint}}}}}, sid) or {}
     files = []
     for prepared_stage in prepared.get("Этап") or []:
         for attachment in prepared_stage.get("Вложение") or []:
             file = attachment.get("Файл") or {}
-            if not attachment.get("Идентификатор") or not file.get("Ссылка"):
-                continue
-            request = urllib.request.Request(file["Ссылка"], headers={SESSION_HEADER: sid})
-            with urllib.request.urlopen(request, timeout=60) as response:
-                raw = response.read()
-            files.append({"id": attachment["Идентификатор"], "name": file.get("Имя") or "",
-                          "data": base64.b64encode(raw).decode()})
+            if attachment.get("Идентификатор") and file.get("Ссылка"):
+                files.append({"id": attachment["Идентификатор"], "name": file.get("Имя") or "", "link": file["Ссылка"]})
     if not files:
         raise SabyError("СБИС не вернул файл для подписи")
-    return {"id": doc_id, "stage": stage, "action": action, "files": files}
+    return files
 
 
 def send_signed(sid: str, url: str, doc_id: str, stage: str, action: str, thumbprint: str,

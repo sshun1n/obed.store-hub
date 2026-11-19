@@ -15,6 +15,8 @@ import base64
 import logging
 import re
 import secrets
+import threading
+import time
 import xml.etree.ElementTree as ET
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -181,45 +183,75 @@ def _shipment_of(sid: str, order_card: dict) -> Optional[dict]:
     return {"Идентификатор": link["id"], "Номер": link["number"], "Состояние": {"Название": ""}}
 
 
+def _buyer_inn(item: dict) -> str:
+    return (((item.get("Контрагент") or {}).get("СвЮЛ")) or {}).get("ИНН") or ""
+
+
 def _approval_stage(order_card: dict) -> str:
     return next((st.get("Идентификатор", "") for st in order_card.get("Этап") or []
                  if st.get("Название") == "Утверждение"), "")
 
 
+NOTICE_TTL = 6 * 3600          # образец уведомления меняется редко — держим шесть часов
+_notice_cache: Dict[str, tuple] = {}   # ИНН покупателя → (время, текст образца)
+
+
 def _notices(db, sid: str, needed: set, day: date, buyer_inn: str) -> Tuple[str, Dict[str, dict]]:
     """Образец уведомления и каталог позиций — из завершённых реализаций Лавки.
 
-    Открываем только завершённые (их ka-webapp читал сотнями без вреда), не больше
+    Покупателя отбираем прямо по списку (Контрагент в строке списка): свежие завершённые
+    реализации — почти сплошь Самоката, без уведомления, и раньше их открывали подряд —
+    до 20 с на создание. Открываем только завершённые Лавки, пачками в несколько потоков,
+    а разбираем строго в порядке списка — образец тот же, что был. Не больше
     NOTICE_BUDGET после образца. Найденное кладём в edo_items, чтобы не искать снова.
     """
     known = {i.buyer_code: {"name": i.name, "code": i.code} for i in db.query(database.EdoItem)}
-    template = ""
+    cached = _notice_cache.get(buyer_inn)
+    template = cached[1] if cached and time.time() - cached[0] < NOTICE_TTL else ""
     found: Dict[str, dict] = {}
+    if template and needed <= set(known):
+        return template, known
+    batch_size = max(1, sc.read_parallel())
+    candidates = (item for item in sc.list_documents(sid, sc.DOCS_URL, sc.SHIPMENT_TYPE, start=day - timedelta(days=90),
+                                                     end=day, pages=12)
+                  if sc.state(item) in sc.FINISHED and (not buyer_inn or _buyer_inn(item) in (buyer_inn, "")))
+
+    def read(item):
+        card = sc.read_card(sid, sc.DOCS_URL, item["Идентификатор"], sc.SHIPMENT_TYPE, state=sc.state(item))
+        return sc.xml_attachment(sid, card, "УведомлОтгр")
+
     opened = 0
-    for item in sc.list_documents(sid, sc.DOCS_URL, sc.SHIPMENT_TYPE, start=day - timedelta(days=90), end=day, pages=12):
-        if template and (needed <= set(known) | set(found) or opened >= NOTICE_BUDGET):
+    done = False
+    while not done:
+        batch = [item for _, item in zip(range(batch_size), candidates)]
+        if not batch:
             break
-        state = sc.state(item)
-        if state not in sc.FINISHED:
-            continue
-        opened += 1
-        saby_sync.step(f"Читаю номенклатуру: завершённая реализация {opened}")
-        card = sc.read_card(sid, sc.DOCS_URL, item["Идентификатор"], sc.SHIPMENT_TYPE, state=state)
-        text = sc.xml_attachment(sid, card, "УведомлОтгр")
-        if not text:
-            continue
-        notice = ET.fromstring(text)
-        node = notice.find("Документ/Стороны/Покупатель/СвЮЛ")
-        if buyer_inn and (node.get("ИНН") if node is not None else "") != buyer_inn:
-            continue
-        template = template or text
-        body = notice.find("Документ")
-        for row in body.iter("СтрТабл") if body is not None else []:
-            code = row.get("КодПокупателя") or ""
-            if code and code not in known and code not in found:
-                found[code] = {"name": row.get("Название"), "code": row.get("КодПоставщика")}
+        opened += len(batch)
+        saby_sync.step(f"Читаю номенклатуру: завершённые реализации Лавки, {opened}")
+        for text in sc.pmap(read, batch):
+            if isinstance(text, Exception):
+                raise text
+            if not text:
+                continue
+            notice = ET.fromstring(text)
+            node = notice.find("Документ/Стороны/Покупатель/СвЮЛ")
+            if buyer_inn and (node.get("ИНН") if node is not None else "") != buyer_inn:
+                continue
+            template = template or text
+            body = notice.find("Документ")
+            for row in body.iter("СтрТабл") if body is not None else []:
+                code = row.get("КодПокупателя") or ""
+                if code and code not in known and code not in found:
+                    found[code] = {"name": row.get("Название"), "code": row.get("КодПоставщика")}
+            if template and needed <= set(known) | set(found):
+                done = True
+                break
+        if template and opened >= NOTICE_BUDGET:
+            break
     if not template:
         raise ActionError("Среди реализаций за три месяца нет завершённой по Лавке — не с чего взять образец документа")
+    if not (cached and cached[1] == template):
+        _notice_cache[buyer_inn] = (time.time(), template)
     for code, value in found.items():
         db.add(database.EdoItem(buyer_code=code, name=(value["name"] or "")[:300], code=(value["code"] or "")[:60]))
     db.commit()
@@ -289,37 +321,114 @@ def create_shipments(day: date, numbers: List[str], user: str) -> Dict:
             return result
         inn = ((ready[0][2].get("Контрагент") or {}).get("СвЮЛ") or {}).get("ИНН") or ""
         template, catalogue = _notices(db, sid, needed, day, inn)
-        for i, (order, row, card, order_xml) in enumerate(ready, start=1):
-            label = order.point.name
-            saby_sync.step(f"Создаю реализацию {i} из {len(ready)}", i, len(ready))
-            _row(order.order_no, "work", "создаю")
-            note = row.address or order.point.name
+        # Всё, что нужно потокам, — простыми значениями: _notices сохранял в базу, объекты
+        # сессии устарели, а перечитывать их из нескольких потоков нельзя
+        jobs = [{"label": order.point.name, "order_no": order.order_no, "number": row.number,
+                 "note": row.address or order.point.name, "card": card, "xml": order_xml}
+                for order, row, card, order_xml in ready]
+        total = len(jobs)
+        counter = _Counter()
+
+        def create(job):
+            _row(job["order_no"], "work", "создаю")
+            name, content = desadv.build(job["xml"], template, number=job["number"], day=day, note=job["note"],
+                                         catalogue=catalogue)
+            card = job["card"]
             try:
-                name, content = desadv.build(order_xml, template, number=row.number, day=day, note=note,
-                                             catalogue=catalogue)
                 sc.write_document(sid, sc.DOCS_URL, {
-                    "Тип": sc.SHIPMENT_TYPE, "Номер": row.number, "Дата": day.strftime("%d.%m.%Y"),
-                    "Примечание": note,
+                    "Тип": sc.SHIPMENT_TYPE, "Номер": job["number"], "Дата": day.strftime("%d.%m.%Y"),
+                    "Примечание": job["note"],
                     "НашаОрганизация": card.get("НашаОрганизация") or {},
                     "Контрагент": card.get("Контрагент") or {},
-                    "ДополнительныеПоля": {"НомерТоварнойНакладной": row.number,
+                    "ДополнительныеПоля": {"НомерТоварнойНакладной": job["number"],
                                            "ДатаТоварнойНакладной": day.strftime("%d.%m.%y")},
                     "ДокументОснование": [{"ВидСвязи": "Обычная связь",
                                            "Документ": {"Идентификатор": card["Идентификатор"]}}],
                     "Вложение": [{"Файл": {"Имя": f"{name}.xml",
                                            "ДвоичныеДанные": base64.b64encode(content).decode()}}],
                 })
-                result["done"].append(label)
-                _row(order.order_no, "ok", "создана")
-                unknown = desadv.unknown_positions(order_xml, catalogue)
-                if unknown:
-                    result["notes"].append(f"{label}: названия из заказа Лавки, нет в каталоге — {', '.join(unknown)}")
-            except (sc.SabyError, desadv.NoticeError) as exc:
-                result["errors"][label] = str(exc)
-                _row(order.order_no, "error", str(exc))
+            except sc.SabyError as exc:
+                # Обрыв связи: запись могла пройти. Не повторяем — смотрим, есть ли реализация у заказа
+                if not sc.is_link_error(exc):
+                    raise
+                again = sc.read_card(sid, sc.DOCS_URL, card["Идентификатор"], sc.ORDER_TYPE)
+                if not sc.consequences(again, sc.SHIPMENT_TYPE):
+                    raise ActionError(f"{exc}. Реализации у заказа нет — можно повторить «Создать»") from exc
+            finally:
+                saby_sync.step(f"Создаю реализации: {counter.next()} из {total}", counter.value, total)
+            return desadv.unknown_positions(job["xml"], catalogue)
+
+        saby_sync.step(f"Создаю реализации: 0 из {total}", 0, total)
+        for job, got in zip(jobs, sc.pmap_writes(create, jobs, on_brake=_brake(result))):
+            if isinstance(got, Exception):
+                result["errors"][job["label"]] = str(got)
+                _row(job["order_no"], "error", str(got))
+                continue
+            result["done"].append(job["label"])
+            _row(job["order_no"], "ok", "создана")
+            if got:
+                result["notes"].append(f"{job['label']}: названия из заказа Лавки, нет в каталоге — {', '.join(got)}")
         return result
     finally:
         db.close()
+
+
+class _Counter:
+    """Счётчик готовых точек для строки хода — из нескольких потоков."""
+
+    def __init__(self):
+        self.value = 0
+        self._lock = threading.Lock()
+
+    def next(self) -> int:
+        with self._lock:
+            self.value += 1
+            return self.value
+
+
+def _brake(result: Dict):
+    def on_brake(exc):
+        result["notes"].append(f"СБИС ограничил запросы ({exc}) — дальше по одной точке")
+    return on_brake
+
+
+# --- Проведение ---
+#
+# Проведённой точка считается, только когда утверждён заказ Лавки. Если реализация
+# ушла, а заказ не утверждён (связь оборвалась между «Отправить» и «Утвердить»),
+# точка ждёт утверждения: «Провести» только утвердит заказ, реализацию повторно не шлёт.
+# Пустое или незнакомое состояние реализации — отказ, а не отправка.
+
+SENT_STATES = ("Отправлен", "Доставлен", "Выполнение завершено", "Состояние не определено", "Ошибка", "Отклон",
+               "Подписан", "Получен", "В обработке")
+
+
+def _point_state(sid: str, order_no: str) -> dict:
+    """Точка вживую: заказ из списка и карточки, реализация — только из списка."""
+    item = _find_order(sid, order_no)
+    if item is None:
+        return {"item": None}
+    card = sc.read_card(sid, sc.DOCS_URL, item["Идентификатор"], sc.ORDER_TYPE)
+    return {"item": item, "card": card, "shipment": _shipment_of(sid, card)}
+
+
+def _phase(point: dict) -> str:
+    """approved — заказ утверждён; draft — реализация черновиком, надо провести;
+    needs_approval — реализация ушла, заказ не утверждён; none — реализации нет;
+    unknown — состояние реализации не понять."""
+    if point.get("item") is None:
+        return "no_order"
+    if sc.state(point["card"]) in sc.FINISHED:
+        return "approved"
+    shipment = point.get("shipment")
+    if shipment is None:
+        return "none"
+    state = sc.state(shipment)
+    if state == DRAFT:
+        return "draft"
+    if state and any(state.startswith(s) for s in SENT_STATES):
+        return "needs_approval"
+    return "unknown"
 
 
 def process_shipments(day: date, numbers: List[str], user: str) -> Dict:
@@ -328,46 +437,117 @@ def process_shipments(day: date, numbers: List[str], user: str) -> Dict:
     result = {"done": [], "errors": {}, "notes": [], "skipped": []}
     try:
         orders = _orders(db, day, numbers)
+        used, jobs = set(), []
+        for order in orders:
+            row = _registry_row(db, day, order, used)
+            if row is not None:
+                used.add(row.id)
+            jobs.append({"label": order.point.name, "order_no": order.order_no,
+                         "number": row.number if row else None,
+                         "note": (row.address or order.point.name) if row else None})
         saby_sync.step("Вход в СБИС")
         sid = sc.login()
-        used = set()
-        for i, order in enumerate(orders, start=1):
-            label = order.point.name
-            saby_sync.step(f"Провожу точку {i} из {len(orders)}", i, len(orders))
-            _row(order.order_no, "work", "провожу")
-            try:
-                row = _registry_row(db, day, order, used)
-                if row is not None:
-                    used.add(row.id)
-                item = _find_order(sid, order.order_no)
-                if item is None:
-                    raise ActionError(f"заказ {order.order_no} в СБИС не найден")
-                card = sc.read_card(sid, sc.DOCS_URL, item["Идентификатор"], sc.ORDER_TYPE)
-                shipment = _shipment_of(sid, card)
-                if shipment is None:
-                    raise ActionError("реализации ещё нет — сначала «Создать»")
-                # Состояние — только что из списка: точку могли провести руками минуту назад.
+        # Все точки читаем заранее, в несколько потоков; пишем потом
+        for job in jobs:
+            _row(job["order_no"], "work", "читаю")
+        states = sc.pmap(lambda job: _point_state(sid, job["order_no"]), jobs,
+                         lambda i, n: saby_sync.step(f"Читаю точки: {i} из {n}", i, n))
+        todo = []
+        for job, point in zip(jobs, states):
+            label = job["label"]
+            if isinstance(point, Exception):
+                result["errors"][label] = str(point)
+                _row(job["order_no"], "error", str(point))
+                continue
+            phase = _phase(point)
+            if phase == "approved":
                 # Проведённую не трогаем и ошибкой не считаем: при «все точки» это обычный случай
-                if sc.state(card) in sc.FINISHED or sc.state(shipment) != DRAFT:
-                    result["skipped"].append(label)
-                    _row(order.order_no, "skip", "уже проведена")
-                    continue
+                result["skipped"].append(label)
+                _row(job["order_no"], "skip", "уже проведена")
+                continue
+            problem = {"no_order": f"заказ {job['order_no']} в СБИС не найден",
+                       "none": "реализации ещё нет — сначала «Создать»",
+                       "unknown": f"состояние реализации «{sc.state(point.get('shipment') or {}) or 'пусто'}» не понятно — "
+                                  "обновите из СБИС; сами не отправляем"}.get(phase)
+            if problem is None:
+                shipment = point["shipment"]
                 number = str(shipment.get("Номер") or "").strip()
                 note = str(shipment.get("Примечание") or "")
                 # Чужую реализацию не правим и не отправляем: только ту, где всё как мы создаём
-                if row is None or number != row.number or note != (row.address or order.point.name):
-                    raise ActionError(f"в реализации № {number or '—'} не тот номер или адрес "
-                                      f"(ждём № {row.number if row else '—'}). Проверьте в кабинете — сами не правим")
-                sc.run_action(sid, sc.DOCS_URL, shipment["Идентификатор"], "Отправка", "Отправить")
-                sc.run_action(sid, sc.DOCS_URL, item["Идентификатор"], "Утверждение", "Утвердить", _approval_stage(card))
-                result["done"].append(label)
-                _row(order.order_no, "ok", "проведена")
+                if job["number"] is None or number != job["number"] or note != job["note"]:
+                    problem = (f"в реализации № {number or '—'} не тот номер или адрес "
+                               f"(ждём № {job['number'] or '—'}). Проверьте в кабинете — сами не правим")
+            if problem:
+                result["errors"][label] = problem
+                _row(job["order_no"], "error", problem)
+                continue
+            _row(job["order_no"], "wait", "в очереди" if phase == "draft" else "ждёт утверждения заказа")
+            todo.append((job, point, phase))
+
+        total = len(todo)
+        counter = _Counter()
+
+        def process(entry):
+            job, point, phase = entry
+            _row(job["order_no"], "work", "провожу" if phase == "draft" else "утверждаю заказ")
+            try:
+                if phase == "draft":
+                    sc.run_action(sid, sc.DOCS_URL, point["shipment"]["Идентификатор"], "Отправка", "Отправить")
+                sc.run_action(sid, sc.DOCS_URL, point["item"]["Идентификатор"], "Утверждение", "Утвердить",
+                              _approval_stage(point["card"]))
             except sc.SabyError as exc:
-                result["errors"][label] = str(exc)
-                _row(order.order_no, "error", str(exc))
+                if not sc.is_link_error(exc):
+                    raise
+                # Обрыв связи: не повторяем, а смотрим, что по факту
+                after = _phase(_point_state(sid, job["order_no"]))
+                if after == "approved":
+                    return "проведена (ответ потерялся, проверено по кабинету)"
+                if after == "needs_approval":
+                    raise ActionError(f"{exc}. Реализация ушла, заказ не утверждён — нажмите «Провести» ещё раз: "
+                                      "отправка не повторится, только утверждение") from exc
+                raise ActionError(f"{exc}. По кабинету точка не проведена — можно повторить") from exc
+            finally:
+                saby_sync.step(f"Провожу точки: {counter.next()} из {total}", counter.value, total)
+            return "проведена" if phase == "draft" else "заказ утверждён"
+
+        saby_sync.step(f"Провожу точки: 0 из {total}", 0, total)
+        outcome = sc.pmap_writes(process, todo, on_brake=_brake(result))
+        for (job, _, _), got in zip(todo, outcome):
+            if isinstance(got, Exception):
+                result["errors"][job["label"]] = str(got)
+                _row(job["order_no"], "error", str(got))
+            else:
+                result["done"].append(job["label"])
+                _row(job["order_no"], "ok", got)
+        _verify(sid, [job for job, _, _ in todo], result)
         return result
     finally:
         db.close()
+
+
+def _verify(sid: str, jobs: List[dict], result: Dict) -> None:
+    """Сверка после проведения: все тронутые точки перечитываем. Ошибка, за которой точка
+    по факту проведена, переезжает в проведённые; проведённая без утверждённого заказа —
+    отдельной строкой."""
+    if not jobs:
+        return
+    saby_sync.step("Сверяю проведённое с кабинетом")
+    phases = sc.pmap(lambda job: _phase(_point_state(sid, job["order_no"])), jobs)
+    for job, phase in zip(jobs, phases):
+        label = job["label"]
+        if isinstance(phase, Exception):
+            result["notes"].append(f"{label}: сверка не удалась — {phase}")
+            continue
+        if phase == "approved" and label in result["errors"]:
+            result["errors"].pop(label)
+            result["done"].append(label)
+            _row(job["order_no"], "ok", "проведена (по сверке с кабинетом)")
+        elif phase == "needs_approval":
+            result["notes"].append(f"{label}: реализация отправлена, а заказ не утверждён — нажмите «Провести» ещё раз")
+            if label in result["done"]:
+                result["done"].remove(label)
+                result["errors"][label] = "заказ не утверждён"
+            _row(job["order_no"], "error", "заказ не утверждён")
 
 
 # --- Заказ на перевозку ---
@@ -593,38 +773,74 @@ def create_waybills(day: date, numbers: List[str], user: str) -> Dict:
         saby_sync.step("Вход в СБИС")
         sid = sc.login()
         first = sc.max_number(sid, sc.WAYBILL_TYPE) + 1
-        for i, order in enumerate(orders):
-            label = order.point.name
-            number = str(first + i)
-            saby_sync.step(f"Создаю ЭТрН {i + 1} из {len(orders)}", i + 1, len(orders))
-            _row(order.order_no, "work", "создаю ЭТрН")
+        # Номера раздаём заранее — при записи в несколько потоков гонки за номер нет.
+        # Всё нужное потокам — простыми значениями, не объектами сессии
+        jobs = [{"label": o.point.name, "order_no": o.order_no, "address": o.point.address, "number": str(first + i),
+                 "payload": waybill_payload(s, own, buyer, carrier, o, str(first + i), transport, day, weights[o.order_no])}
+                for i, o in enumerate(orders)]
+        transport_id, cargo_name = transport.saby_id, s.cargo_name
+        buyer_box = ({"СвЮЛ": {"ИНН": buyer.inn, "КПП": buyer.kpp}, "Идентификатор": buyer.edo_id}
+                     if buyer.edo_id else None)
+        own_inn = own.inn
+
+        # 1. Сборка титулов — только чтение, в несколько потоков. Не собрался хоть один —
+        #    не создаём ни одной: иначе нумерация пойдёт с дырой
+        for job in jobs:
+            _row(job["order_no"], "work", "собираю ЭТрН")
+        files = sc.pmap(lambda job: sc.generate_attachment(sid, WAYBILL_ATTACH, WAYBILL_KND, FORMAT_VERSION, job["payload"]),
+                        jobs, lambda i, n: saby_sync.step(f"Собираю ЭТрН: {i} из {n}", i, n))
+        failed = {job["label"]: str(f) for job, f in zip(jobs, files) if isinstance(f, Exception)}
+        if failed:
+            result["errors"].update(failed)
+            for job, f in zip(jobs, files):
+                _row(job["order_no"], "error" if isinstance(f, Exception) else "skip",
+                     str(f) if isinstance(f, Exception) else "не создана: не собрались другие")
+            result["notes"].append("Не собрался титул у части точек — не создано ни одной ЭТрН. Исправьте и повторите")
+            return result
+
+        # 2. Запись — по переключателю потоков (по умолчанию по одной)
+        total = len(jobs)
+        counter = _Counter()
+
+        def write(pair):
+            job, file = pair
+            _row(job["order_no"], "work", "создаю ЭТрН")
             try:
-                file = sc.generate_attachment(sid, WAYBILL_ATTACH, WAYBILL_KND, FORMAT_VERSION,
-                                              waybill_payload(s, own, buyer, carrier, order, number, transport, day,
-                                                              weights[order.order_no]))
                 document = {"Тип": sc.WAYBILL_TYPE, "Регламент": {"Название": WAYBILL_RULE},
-                            "НашаОрганизация": {"СвЮЛ": {"ИНН": own.inn}}, "Вложение": [{"Файл": file}],
+                            "НашаОрганизация": {"СвЮЛ": {"ИНН": own_inn}}, "Вложение": [{"Файл": file}],
                             "ДокументОснование": [{"ВидСвязи": "Обычная связь",
-                                                   "Документ": {"Идентификатор": transport.saby_id}}],
+                                                   "Документ": {"Идентификатор": transport_id}}],
                             # Номер ЯЛ и в карточке: кабинет подставляет его в файл при отправке
-                            "ДополнительныеПоля": {"ORDERS": order.order_no}}
+                            "ДополнительныеПоля": {"ORDERS": job["order_no"]}}
                 # Ящик Лавки задаём явно: ЭТрН она принимает в Контуре, а не в своём ящике СБИС
-                if buyer.edo_id:
-                    document["Контрагент"] = {"СвЮЛ": {"ИНН": buyer.inn, "КПП": buyer.kpp}, "Идентификатор": buyer.edo_id}
-                doc = sc.write_document(sid, sc.TMS_URL, document)
-                db.add(database.SabyDoc(saby_id=doc["Идентификатор"], kind="waybill", delivery_date=day,
-                                        number=str(doc.get("Номер") or "") or number, state=sc.state(doc) or DRAFT,
-                                        order_no=order.order_no, cargo=s.cargo_name, parent_id=transport.saby_id,
-                                        address=order.point.address, ours=True, created_by_app=True, created_by=user,
-                                        read_at=datetime.utcnow(), link=doc.get("СсылкаДляНашаОрганизация")))
-                db.commit()
-                result["done"].append(label)
-                result["doc_ids"].append(doc["Идентификатор"])
-                _row(order.order_no, "ok", "создана")
-            except sc.SabyError as exc:
-                db.rollback()
-                result["errors"][label] = str(exc)
-                _row(order.order_no, "error", str(exc))
+                if buyer_box:
+                    document["Контрагент"] = buyer_box
+                try:
+                    return sc.write_document(sid, sc.TMS_URL, document)
+                except sc.SabyError as exc:
+                    if sc.is_link_error(exc):
+                        raise ActionError(f"{exc}. Накладная могла создаться — «Обновить из СБИС» и проверьте, "
+                                          "прежде чем создавать снова") from exc
+                    raise
+            finally:
+                saby_sync.step(f"Создаю ЭТрН: {counter.next()} из {total}", counter.value, total)
+
+        pairs = list(zip(jobs, files))
+        # В базу пишет только этот поток; созданные сохраняются, даже если другие упали
+        for (job, _), doc in zip(pairs, sc.pmap_writes(write, pairs, on_brake=_brake(result))):
+            if isinstance(doc, Exception):
+                result["errors"][job["label"]] = str(doc)
+                _row(job["order_no"], "error", str(doc))
+                continue
+            db.add(database.SabyDoc(saby_id=doc["Идентификатор"], kind="waybill", delivery_date=day,
+                                    number=str(doc.get("Номер") or "") or job["number"], state=sc.state(doc) or DRAFT,
+                                    order_no=job["order_no"], cargo=cargo_name, parent_id=transport_id,
+                                    address=job["address"], ours=True, created_by_app=True, created_by=user,
+                                    read_at=datetime.utcnow(), link=doc.get("СсылкаДляНашаОрганизация")))
+            db.commit()
+            result["done"].append(job["label"])
+            result["doc_ids"].append(doc["Идентификатор"])
+            _row(job["order_no"], "ok", "создана")
         return result
     finally:
         db.close()
@@ -735,11 +951,29 @@ def prepare_signing(day: date, kind: str, numbers: List[str], thumbprint: str) -
             if item is None or item.get("Удален") == "Да" or sc.state(item) != DRAFT or not sc.attachments(item):
                 skipped[f"№ {number}"] = "уже не черновик с УПД — обновите из СБИС"
                 ids.pop(saby_id)
-    for saby_id, (number, _) in ids.items():
+    # Шаги подписи из карточек — чтения, в несколько потоков; ПодготовитьДействие — запись,
+    # по одному документу; файлы к подписи скачиваем снова в несколько потоков
+    order = list(ids.items())
+    steps = sc.pmap(lambda pair: sc.sign_step(sid, url, pair[0], doc_type, preferred, fixed), order)
+    prepared = []
+    for (saby_id, (number, _)), step in zip(order, steps):
         try:
-            documents.append(sc.prepare_sign(sid, url, saby_id, doc_type, thumbprint, preferred, fixed))
+            if isinstance(step, Exception):
+                raise step
+            stage, action = step
+            prepared.append((saby_id, stage, action, sc.prepare_action(sid, url, saby_id, stage, action, thumbprint)))
         except sc.SabyError as exc:
             skipped[f"№ {number}"] = str(exc)
+    links = [f for *_, files in prepared for f in files]
+    raws = dict(zip([f["id"] for f in links], sc.pmap(lambda f: sc.fetch(sid, f["link"]), links)))
+    for saby_id, stage, action, files in prepared:
+        failed = next((raws[f["id"]] for f in files if isinstance(raws[f["id"]], Exception)), None)
+        if failed is not None:
+            skipped[f"№ {ids[saby_id][0]}"] = str(failed)
+            continue
+        documents.append({"id": saby_id, "stage": stage, "action": action,
+                          "files": [{"id": f["id"], "name": f["name"], "data": base64.b64encode(raws[f["id"]]).decode()}
+                                    for f in files]})
     if not documents:
         raise ActionError(next(iter(skipped.values()), "нечего подписывать"))
     now = datetime.now(timezone.utc)
@@ -881,13 +1115,24 @@ def auto_sync_due() -> None:
 _poller_started = False
 
 
+def load_limits() -> None:
+    """Потоки СБИС из админ-панели — при старте приложения."""
+    db = database.SessionLocal()
+    try:
+        s = get_settings(db)
+        sc.set_limits(s.read_parallel or sc.SABY_PARALLEL, s.write_parallel or 1)
+    except Exception as exc:
+        logger.warning(f"Потоки СБИС не прочитались, беру по умолчанию: {exc}")
+    finally:
+        db.close()
+
+
 def start_poller() -> None:
     global _poller_started
     if _poller_started:
         return
     _poller_started = True
-    import threading
-    import time
+    load_limits()
 
     def loop():
         while True:

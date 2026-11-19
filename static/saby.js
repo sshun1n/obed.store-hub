@@ -81,7 +81,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!order && !ship) return '<span class="saby-none">нет в СБИС</span>';
         const reg = regMark(p);
         if (!ship) return `${link(order && order.link, 'Заказ')} ${chip(order && order.state)}<div class="saby-sub">реализации нет${reg ? ` · ${reg}` : ''}</div>`;
-        return `${link(order ? order.link : ship.link, `№ ${esc(ship.number || '—')}`)} ${chip(ship.state)}${reg ? `<div class="saby-sub">${reg}</div>` : ''}`;
+        const wait = p.needs_approval ? '<span class="st st-draft" title="Реализация ушла, а заказ Лавки не утверждён: «Провести» утвердит его, не отправляя реализацию заново">заказ не утверждён</span>' : '';
+        const sub = [wait, reg].filter(Boolean).join(' · ');
+        return `${link(order ? order.link : ship.link, `№ ${esc(ship.number || '—')}`)} ${chip(ship.state)}${sub ? `<div class="saby-sub">${sub}</div>` : ''}`;
     }
     function waybillCell(w) {
         if (!w) return '<span class="saby-none">—</span>';
@@ -125,8 +127,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 2. Реализации
         const toCreate = t.filter(p => !p.shipment && p.order && p.registry);
-        const toProcess = t.filter(p => p.shipment && /редактируется/i.test(p.shipment.state || ''));
-        const processed = d.points.filter(p => p.shipment && !/редактируется/i.test(p.shipment.state || '')).length;
+        // «Провести» берёт и черновики, и точки, где реализация ушла, а заказ не утверждён:
+        // у них только утверждение, повторной отправки нет
+        const toProcess = t.filter(p => p.shipment && (p.needs_approval || /редактируется/i.test(p.shipment.state || '')));
+        const processed = d.points.filter(p => p.processed).length;
         const shipDone = processed === n;
         const step2 = stepCard(2, 'Реализации',
             `Создано ${s.shipments} из ${n}, проведено ${processed}${sel}`,
@@ -366,7 +370,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (!(await runTask({ action: 'create_shipments' }))) return;
                 } else if (name === 'ship-create') return;
                 if (name === 'ship-all') {
-                    const drafts = targets().filter(p => p.shipment && /редактируется/i.test(p.shipment.state || '')).map(p => p.order_no);
+                    const drafts = targets().filter(p => p.shipment && (p.needs_approval || /редактируется/i.test(p.shipment.state || ''))).map(p => p.order_no);
                     if (drafts.length) await runTask({ action: 'process_shipments', orders: drafts });
                 }
                 return;
